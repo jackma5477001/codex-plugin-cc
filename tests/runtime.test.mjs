@@ -1118,6 +1118,52 @@ test("task keeps unclear and explicitly read-only requests read-only", () => {
   }
 });
 
+test("a natural-language read-only request outranks resume inheritance", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  assert.equal(
+    run("node", [SCRIPT, "task", "implement the retry helper"], { cwd: repo, env: buildEnv(binDir) }).status,
+    0
+  );
+  assert.equal(
+    run("node", [SCRIPT, "task", "continue, but do not change any files"], {
+      cwd: repo,
+      env: buildEnv(binDir)
+    }).status,
+    0
+  );
+
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  // The second run resumes the thread, so the sandbox lands on lastResumeStart.
+  assert.equal(fakeState.lastResumeStart.sandbox, "read-only");
+});
+
+test("framework names are not mistaken for resume instructions", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  assert.equal(
+    run("node", [SCRIPT, "task", "investigate the login flow"], { cwd: repo, env: buildEnv(binDir) }).status,
+    0
+  );
+  assert.equal(
+    run("node", [SCRIPT, "task", "Next.js: fix the login page"], { cwd: repo, env: buildEnv(binDir) }).status,
+    0
+  );
+
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  // A new thread, and the explicit "fix" keeps it write-capable.
+  assert.equal(fakeState.threads.length, 2);
+  assert.equal(fakeState.lastThreadStart.sandbox, "workspace-write");
+});
+
 test("task --read-only overrides the write default", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();

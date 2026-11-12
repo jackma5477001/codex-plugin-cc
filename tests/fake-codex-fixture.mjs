@@ -417,7 +417,8 @@ rl.on("line", (line) => {
           threadId: thread.id,
           approvalPolicy: message.params.approvalPolicy ?? null,
           approvalsReviewer: message.params.approvalsReviewer ?? null,
-          serviceTier: message.params.serviceTier ?? null
+          serviceTier: message.params.serviceTier ?? null,
+          sandbox: message.params.sandbox ?? null
         };
         saveState(state);
         send({ id: message.id, result: { thread: buildThread(thread), model: message.params.model || "gpt-6.1-sol", modelProvider: "openai", serviceTier: message.params.serviceTier ?? null, cwd: thread.cwd, approvalPolicy: message.params.approvalPolicy ?? "never", sandbox: { type: "readOnly", access: { type: "fullAccess" }, networkAccess: false }, reasoningEffort: null } });

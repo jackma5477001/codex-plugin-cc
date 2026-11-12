@@ -211,13 +211,26 @@ const READ_ONLY_INTENT_PATTERN =
   /\b(review|investigate|diagnose|diagnosis|analy[sz]e|research|explain|summari[sz]e|look into|why (is|does|did)|read[- ]only|do not (change|edit|modify|touch)|don't (change|edit|modify|touch)|without (changing|editing|modifying|making)|no changes?|no edits?)\b/i;
 
 function resolveTaskWriteMode(options, prompt, context = {}) {
+  // Explicit flags always win.
   if (options["read-only"]) {
     return false;
   }
   if (options.write) {
     return true;
   }
+
   const text = String(prompt ?? "");
+  if (!text) {
+    return false;
+  }
+
+  // A natural-language read-only request outranks both the edit signal and
+  // permission inheritance, so "continue, but do not change any files" and
+  // "explain how to apply the fix" never become write runs.
+  if (READ_ONLY_INTENT_PATTERN.test(text)) {
+    return false;
+  }
+
   if (looksLikeFollowUpPrompt(text)) {
     // A follow-up that names a concrete fix is still an edit request.
     if (followUpRequestsEdit(text)) {
@@ -227,13 +240,7 @@ function resolveTaskWriteMode(options, prompt, context = {}) {
     // write-capable task stays write-capable across "continue".
     return Boolean(context.previousTaskWrite);
   }
-  if (!text) {
-    return false;
-  }
-  // A read-only signal always wins over an edit signal.
-  if (READ_ONLY_INTENT_PATTERN.test(text)) {
-    return false;
-  }
+
   return EDIT_INTENT_PATTERN.test(text);
 }
 
@@ -427,8 +434,10 @@ function findLatestResumableTaskJob(jobs) {
 
 // A follow-up must *be* the instruction, not merely mention one of these
 // words. "fix the resume button" is a new task, not a resume request.
+// `next` is matched only as a standalone instruction (`next` / `next step`),
+// never as the "Next.js" framework or a next.config.js filename.
 const FOLLOW_UP_PATTERN =
-  /^(?:(?:please|now|ok|okay|so|then)[,\s]+)?(?:continue|continuing|keep going|resume|carry on|go on|dig deeper|follow up|follow-up|next step|next)\b/i;
+  /^(?:(?:please|now|ok|okay|so|then)[,\s]+)?(?:(?:continue|continuing|keep going|resume|carry on|go on|dig deeper|follow up|follow-up|next step)\b|next[.!]?$)/i;
 
 const FOLLOW_UP_EDIT_PATTERN = /\bapply (?:the|that|this) (?:top|first|last|fix|change|patch)\b/i;
 
