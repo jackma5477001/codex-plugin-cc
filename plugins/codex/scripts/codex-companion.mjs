@@ -210,7 +210,7 @@ const EDIT_INTENT_PATTERN =
 const READ_ONLY_INTENT_PATTERN =
   /\b(review|investigate|diagnose|diagnosis|analy[sz]e|research|explain|summari[sz]e|look into|why (is|does|did)|read[- ]only|do not (change|edit|modify|touch)|don't (change|edit|modify|touch)|without (changing|editing|modifying|making)|no changes?|no edits?)\b/i;
 
-function resolveTaskWriteMode(options, prompt) {
+function resolveTaskWriteMode(options, prompt, context = {}) {
   if (options["read-only"]) {
     return false;
   }
@@ -218,9 +218,16 @@ function resolveTaskWriteMode(options, prompt) {
     return true;
   }
   const text = String(prompt ?? "");
-  if (!text || looksLikeFollowUpPrompt(text)) {
-    // A bare "continue" inherits the thread's previous behavior; do not
-    // silently escalate a resumed read-only investigation into a write run.
+  if (looksLikeFollowUpPrompt(text)) {
+    // A follow-up that names a concrete fix is still an edit request.
+    if (followUpRequestsEdit(text)) {
+      return true;
+    }
+    // Otherwise inherit the permission of the thread being continued, so a
+    // write-capable task stays write-capable across "continue".
+    return Boolean(context.previousTaskWrite);
+  }
+  if (!text) {
     return false;
   }
   // A read-only signal always wins over an edit signal.
@@ -418,8 +425,12 @@ function findLatestResumableTaskJob(jobs) {
   );
 }
 
+// A follow-up must *be* the instruction, not merely mention one of these
+// words. "fix the resume button" is a new task, not a resume request.
 const FOLLOW_UP_PATTERN =
-  /\b(continue|continuing|keep going|resume|carry on|go on|apply the (top|first) fix|dig deeper|follow up|next step)\b/i;
+  /^(?:(?:please|now|ok|okay|so|then)[,\s]+)?(?:continue|continuing|keep going|resume|carry on|go on|dig deeper|follow up|follow-up|next step|next)\b/i;
+
+const FOLLOW_UP_EDIT_PATTERN = /\bapply (?:the|that|this) (?:top|first|last|fix|change|patch)\b/i;
 
 /**
  * Decides whether a rescue request should continue the previous Codex thread
@@ -428,9 +439,22 @@ const FOLLOW_UP_PATTERN =
  * command is driven from the desktop app.
  */
 function looksLikeFollowUpPrompt(prompt) {
-  return FOLLOW_UP_PATTERN.test(String(prompt ?? ""));
+  const text = String(prompt ?? "").trim();
+  if (!text) {
+    return false;
+  }
+  // Long instructions are almost always new work, even when they open with
+  // "continue" as a polite preamble.
+  if (text.split(/\s+/).length > 12) {
+    return false;
+  }
+  return FOLLOW_UP_PATTERN.test(text) || FOLLOW_UP_EDIT_PATTERN.test(text);
 }
 
+/** True when the follow-up explicitly asks for a code change. */
+function followUpRequestsEdit(prompt) {
+  return FOLLOW_UP_EDIT_PATTERN.test(String(prompt ?? ""));
+}
 async function waitForSingleJobSnapshot(cwd, reference, options = {}) {
   const timeoutMs = Math.max(0, Number(options.timeoutMs) || DEFAULT_STATUS_WAIT_TIMEOUT_MS);
   const pollIntervalMs = Math.max(100, Number(options.pollIntervalMs) || DEFAULT_STATUS_POLL_INTERVAL_MS);
@@ -912,15 +936,18 @@ async function handleTask(argv) {
     throw new Error("Choose either --resume/--resume-last or --fresh.");
   }
   const prompt = readTaskPrompt(cwd, options, positionals);
-  const write = resolveTaskWriteMode(options, prompt);
 
   // Implicit resume keeps the fast path free of an AskUserQuestion round trip:
   // an explicit follow-up phrasing continues the latest thread on its own.
   const implicitResume = !resumeLast && !fresh && looksLikeFollowUpPrompt(prompt);
-  const implicitResumeFallback = implicitResume && !findLatestResumableTaskJob(
+  const resumableJob = findLatestResumableTaskJob(
     filterJobsForCurrentClaudeSession(sortJobsNewestFirst(listJobs(workspaceRoot)))
   );
+  const implicitResumeFallback = implicitResume && !resumableJob;
   const effectiveResumeLast = (resumeLast || implicitResume) && !implicitResumeFallback;
+  const write = resolveTaskWriteMode(options, prompt, {
+    previousTaskWrite: effectiveResumeLast ? Boolean(resumableJob?.write) : false
+  });
   const taskMetadata = buildTaskRunMetadata({
     prompt,
     resumeLast: effectiveResumeLast
@@ -994,14 +1021,24 @@ async function handleUsage(argv) {
 }
 
 const IMAGE_PROMPT_PREFIX =
-  "Generate an image and save it as a file in the current working directory. Use the built-in image generation tool.";
+  "Generate an image and save it as a file into the exact directory given below. Use the built-in image generation tool.";
 
-function buildImagePrompt(description) {
+function buildImagePrompt(description, outputDir) {
   const normalized = String(description ?? "").trim();
   if (!normalized) {
     throw new Error("Provide an image description, e.g. `/codex:image a red apple on a white background`.");
   }
-  return `${IMAGE_PROMPT_PREFIX}\n\nImage description:\n${normalized}\n\nAfter saving, report the absolute path of the generated image file and nothing else.`;
+  // The task runner may execute from the workspace root, so name the
+  // caller's directory explicitly instead of relying on "current directory".
+  return [
+    IMAGE_PROMPT_PREFIX,
+    `Output directory: ${outputDir}`,
+    "",
+    "Image description:",
+    normalized,
+    "",
+    "After saving, report the absolute path of the generated image file and nothing else."
+  ].join("\n");
 }
 
 async function handleImage(argv) {
@@ -1015,7 +1052,7 @@ async function handleImage(argv) {
 
   const cwd = resolveCommandCwd(options);
   const workspaceRoot = resolveCommandWorkspace(options);
-  const prompt = buildImagePrompt(positionals.join(" "));
+  const prompt = buildImagePrompt(positionals.join(" "), cwd);
   const model = normalizeRequestedModel(options.model);
   const effort = normalizeReasoningEffort(options.effort);
   const serviceTier = normalizeServiceTier(options.fast ? FAST_SERVICE_TIER : options.speed);

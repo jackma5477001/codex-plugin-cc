@@ -31,12 +31,12 @@ Command selection:
 - If the forwarded request includes `--effort`, pass it through to `task`.
 - If the forwarded request includes `--fast`, pass it through to `task` and do not treat it as part of the natural-language task text.
 - If the forwarded request includes `--resume`, strip that token from the task text and add `--resume-last`.
-- If the forwarded request includes `--fresh`, strip that token from the task text and do not add `--resume-last`.
+- If the forwarded request includes `--fresh`, keep `--fresh` as a flag on the `task` call. Do not drop it: the script resolves implicit resume itself, so omitting it could resume the old thread.
 - `--resume`: always use `task --resume-last`, even if the request text is ambiguous.
-- `--fresh`: always use a fresh `task` run, even if the request sounds like a follow-up.
+- `--fresh`: forward `--fresh` so the script always starts a fresh thread, even if the request sounds like a follow-up.
 - `--effort`: accepted values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`.
 - `--fast`: Codex speed mode (`priority` service tier); roughly 2x speed at higher usage.
-- `--approval`: `never` (default), `on-request`, `untrusted`, or `auto`. `auto` routes approval requests through Codex's own risk-reviewing subagent instead of prompting the user.
+- `--approval`: `never` (default) or `auto`. `on-request` and `untrusted` are rejected because the plugin has no interactive approval channel. `auto` routes approval requests through Codex's own risk-reviewing subagent instead of prompting the user.
 - The `task` command resolves implicit resume itself: a prompt that reads like a follow-up ("continue", "keep going", "apply the top fix", "dig deeper") continues the latest thread, and starts a fresh one when nothing is resumable.
 - `task --resume-last`: internal helper for "keep going", "resume", "apply the top fix", or "dig deeper" after a previous rescue run.
 
