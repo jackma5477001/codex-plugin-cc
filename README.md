@@ -88,12 +88,15 @@ Use it when you want:
 
 Use `--base <ref>` for branch review. It also supports `--wait` and `--background`. It is not steerable and does not take custom focus text. Use [`/codex:adversarial-review`](#codexadversarial-review) when you want to challenge a specific decision or risk area.
 
+It accepts `--model <model|alias>` and `--fast` to pick the Codex model and speed tier. See [Model and speed selection](#model-and-speed-selection).
+
 Examples:
 
 ```bash
 /codex:review
 /codex:review --base main
 /codex:review --background
+/codex:review --model sol --fast
 ```
 
 This command is read-only and will not perform any changes. When run in the background you can use [`/codex:status`](#codexstatus) to check on the progress and [`/codex:cancel`](#codexcancel) to cancel the ongoing task.
@@ -106,6 +109,7 @@ It can be used to pressure-test assumptions, tradeoffs, failure modes, and wheth
 
 It uses the same review target selection as `/codex:review`, including `--base <ref>` for branch review.
 It also supports `--wait` and `--background`. Unlike `/codex:review`, it can take extra focus text after the flags.
+It accepts the same `--model <model|alias>` and `--fast` flags as `/codex:review`.
 
 Use it when you want:
 
@@ -138,6 +142,7 @@ Use it when you want Codex to:
 > Depending on the task and the model you choose these tasks might take a long time and it's generally recommended to force the task to be in the background or move the agent to the background.
 
 It supports `--background`, `--wait`, `--resume`, and `--fresh`. If you omit `--resume` and `--fresh`, the plugin can offer to continue the latest rescue thread for this repo.
+It also accepts `--model <model|alias>`, `--effort <level>`, and `--fast`.
 
 Examples:
 
@@ -145,8 +150,8 @@ Examples:
 /codex:rescue investigate why the tests started failing
 /codex:rescue fix the failing test with the smallest safe patch
 /codex:rescue --resume apply the top fix from the last run
-/codex:rescue --model gpt-5.4-mini --effort medium investigate the flaky integration test
-/codex:rescue --model spark fix the issue quickly
+/codex:rescue --model gpt-6.1-terra --effort high --fast investigate the flaky integration test
+/codex:rescue --model luna fix the issue quickly
 /codex:rescue --background investigate the regression
 ```
 
@@ -158,9 +163,20 @@ Ask Codex to redesign the database connection to be more resilient.
 
 **Notes:**
 
-- if you do not pass `--model` or `--effort`, Codex chooses its own defaults.
-- if you say `spark`, the plugin maps that to `gpt-5.3-codex-spark`
+- if you do not pass `--model`, `--effort`, or `--fast`, Codex chooses its own defaults.
+- model shorthands: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, `astra` → `gpt-6-astra`; the legacy alias `spark` maps to `gpt-6-luna`
+- `--effort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`, depending on what the selected model supports
 - follow-up rescue requests can continue the latest Codex task in the repo
+
+### Model and speed selection
+
+Every Codex command (`/codex:review`, `/codex:adversarial-review`, `/codex:rescue`) accepts:
+
+- `--model <model|alias>` — pick the Codex model. Concrete ids pass through unchanged; the aliases above are resolved by the plugin.
+- `--fast` — run on Codex's fast speed tier (`serviceTier: "priority"`, roughly 2x speed with higher usage). It is off unless you ask for it.
+- `--speed <fast|default>` — explicit form of `--fast`.
+
+Fast mode is only honored for models whose catalog entry advertises it. The plugin forwards the tier to the Codex app server instead of hard-coding model names, so when Codex adds or retires models the flags keep working without a plugin update.
 
 ### `/codex:transfer`
 
@@ -270,11 +286,12 @@ The Codex plugin wraps the [Codex app server](https://developers.openai.com/code
 
 ### Common Configurations
 
-If you want to change the default reasoning effort or the default model that gets used by the plugin, you can define that inside your user-level or project-level `config.toml`. For example to always use `gpt-5.4-mini` on `high` for a specific project you can add the following to a `.codex/config.toml` file at the root of the directory you started Claude in:
+If you want to change the default reasoning effort, model, or speed tier that gets used by the plugin, you can define that inside your user-level or project-level `config.toml`. For example to always use `gpt-6.1-terra` on `high` with the fast tier for a specific project you can add the following to a `.codex/config.toml` file at the root of the directory you started Claude in:
 
 ```toml
-model = "gpt-5.4-mini"
+model = "gpt-6.1-terra"
 model_reasoning_effort = "high"
+service_tier = "priority"
 ```
 
 Your configuration will be picked up based on:

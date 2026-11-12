@@ -68,8 +68,21 @@ const ROOT_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const REVIEW_SCHEMA = path.join(ROOT_DIR, "schemas", "review-output.schema.json");
 const DEFAULT_STATUS_WAIT_TIMEOUT_MS = 240000;
 const DEFAULT_STATUS_POLL_INTERVAL_MS = 2000;
-const VALID_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
-const MODEL_ALIASES = new Map([["spark", "gpt-5.3-codex-spark"]]);
+const VALID_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+// Shorthand aliases for the current Codex model catalog. `spark` is kept as a
+// legacy alias for the fast/cheap model, which is now `gpt-6-luna`.
+const MODEL_ALIASES = new Map([
+  ["spark", "gpt-6-luna"],
+  ["luna", "gpt-6-luna"],
+  ["sol", "gpt-6.1-sol"],
+  ["terra", "gpt-6.1-terra"],
+  ["astra", "gpt-6-astra"]
+]);
+// Codex exposes its speed tiers through `serviceTier`. `priority` is the
+// catalog id for the "Fast" tier (roughly 2x speed, higher usage).
+const FAST_SERVICE_TIER = "priority";
+const VALID_SERVICE_TIERS = new Set([FAST_SERVICE_TIER, "default"]);
+const FAST_MODE_ALIASES = new Set([FAST_SERVICE_TIER, "fast", "true", "1"]);
 const STOP_REVIEW_TASK_MARKER = "Run a stop-gate review of the previous Claude turn.";
 
 function printUsage() {
@@ -77,9 +90,9 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/codex-companion.mjs setup [--enable-review-gate|--disable-review-gate] [--json]",
-      "  node scripts/codex-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>]",
-      "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [focus text]",
-      "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [prompt]",
+      "  node scripts/codex-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model|alias>] [--fast]",
+      "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model|alias>] [--fast] [focus text]",
+      "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|alias>] [--effort <none|minimal|low|medium|high|xhigh|max|ultra>] [--fast] [prompt]",
       "  node scripts/codex-companion.mjs transfer [--source <claude-jsonl>] [--json]",
       "  node scripts/codex-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/codex-companion.mjs result [job-id] [--json]",
@@ -121,10 +134,27 @@ function normalizeReasoningEffort(effort) {
   }
   if (!VALID_REASONING_EFFORTS.has(normalized)) {
     throw new Error(
-      `Unsupported reasoning effort "${effort}". Use one of: none, minimal, low, medium, high, xhigh.`
+      `Unsupported reasoning effort "${effort}". Use one of: none, minimal, low, medium, high, xhigh, max, ultra.`
     );
   }
   return normalized;
+}
+
+function normalizeServiceTier(tier) {
+  if (tier == null) {
+    return null;
+  }
+  const normalized = String(tier).trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (FAST_MODE_ALIASES.has(normalized)) {
+    return FAST_SERVICE_TIER;
+  }
+  if (VALID_SERVICE_TIERS.has(normalized)) {
+    return normalized;
+  }
+  throw new Error(`Unsupported speed mode "${tier}". Use --fast, or --speed <fast|default>.`);
 }
 
 function normalizeArgv(argv) {
@@ -370,6 +400,7 @@ async function executeReviewRun(request) {
     const result = await runAppServerReview(request.cwd, {
       target: reviewTarget,
       model: request.model,
+      serviceTier: request.serviceTier,
       onProgress: request.onProgress
     });
     const payload = {
@@ -411,6 +442,7 @@ async function executeReviewRun(request) {
   const result = await runAppServerTurn(context.repoRoot, {
     prompt,
     model: request.model,
+    serviceTier: request.serviceTier,
     sandbox: "read-only",
     outputSchema: readOutputSchema(REVIEW_SCHEMA),
     onProgress: request.onProgress
@@ -488,6 +520,7 @@ async function executeTaskRun(request) {
     defaultPrompt: resumeThreadId ? DEFAULT_CONTINUE_PROMPT : "",
     model: request.model,
     effort: request.effort,
+    serviceTier: request.serviceTier,
     sandbox: request.write ? "workspace-write" : "read-only",
     onProgress: request.onProgress,
     persistThread: true,
@@ -601,11 +634,12 @@ function buildTaskJob(workspaceRoot, taskMetadata, write) {
   });
 }
 
-function buildTaskRequest({ cwd, model, effort, prompt, write, resumeLast, jobId }) {
+function buildTaskRequest({ cwd, model, effort, serviceTier, prompt, write, resumeLast, jobId }) {
   return {
     cwd,
     model,
     effort,
+    serviceTier,
     prompt,
     write,
     resumeLast,
@@ -711,8 +745,8 @@ function enqueueBackgroundTask(cwd, job, request) {
 
 async function handleReviewCommand(argv, config) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "cwd"],
-    booleanOptions: ["json", "background", "wait"],
+    valueOptions: ["base", "scope", "model", "cwd", "speed"],
+    booleanOptions: ["json", "background", "wait", "fast"],
     aliasMap: {
       m: "model"
     }
@@ -725,6 +759,8 @@ async function handleReviewCommand(argv, config) {
     base: options.base,
     scope: options.scope
   });
+  const model = normalizeRequestedModel(options.model);
+  const serviceTier = normalizeServiceTier(options.fast ? FAST_SERVICE_TIER : options.speed);
 
   config.validateRequest?.(target, focusText);
   const metadata = buildReviewJobMetadata(config.reviewName, target);
@@ -743,7 +779,8 @@ async function handleReviewCommand(argv, config) {
         cwd,
         base: options.base,
         scope: options.scope,
-        model: options.model,
+        model,
+        serviceTier,
         focusText,
         reviewName: config.reviewName,
         onProgress: progress
@@ -761,8 +798,8 @@ async function handleReview(argv) {
 
 async function handleTask(argv) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["model", "effort", "cwd", "prompt-file"],
-    booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background"],
+    valueOptions: ["model", "effort", "cwd", "prompt-file", "speed"],
+    booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background", "fast"],
     aliasMap: {
       m: "model"
     }
@@ -772,6 +809,7 @@ async function handleTask(argv) {
   const workspaceRoot = resolveCommandWorkspace(options);
   const model = normalizeRequestedModel(options.model);
   const effort = normalizeReasoningEffort(options.effort);
+  const serviceTier = normalizeServiceTier(options.fast ? FAST_SERVICE_TIER : options.speed);
   const prompt = readTaskPrompt(cwd, options, positionals);
 
   const resumeLast = Boolean(options["resume-last"] || options.resume);
@@ -794,6 +832,7 @@ async function handleTask(argv) {
       cwd,
       model,
       effort,
+      serviceTier,
       prompt,
       write,
       resumeLast,
@@ -812,6 +851,7 @@ async function handleTask(argv) {
         cwd,
         model,
         effort,
+        serviceTier,
         prompt,
         write,
         resumeLast,

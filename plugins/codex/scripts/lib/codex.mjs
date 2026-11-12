@@ -4,6 +4,7 @@
  * @typedef {import("./app-server-protocol").ThreadItem} ThreadItem
  * @typedef {import("./app-server-protocol").ThreadResumeParams} ThreadResumeParams
  * @typedef {import("./app-server-protocol").ThreadStartParams} ThreadStartParams
+ * @typedef {import("./app-server-protocol").TurnStartParams} TurnStartParams
  * @typedef {import("./app-server-protocol").Turn} Turn
  * @typedef {import("./app-server-protocol").UserInput} UserInput
  * @typedef {((update: string | { message: string, phase: string | null, threadId?: string | null, turnId?: string | null, stderrMessage?: string | null, logTitle?: string | null, logBody?: string | null }) => void)} ProgressReporter
@@ -59,27 +60,60 @@ function cleanCodexStderr(stderr) {
     .join("\n");
 }
 
+/**
+ * Codex treats an explicit `serviceTier: null` on `thread/start` as "use the
+ * standard tier", which would override a user's `service_tier` in config.toml.
+ * Only include the field when the caller actually picked a tier so the
+ * user-level and project-level Codex config keeps working.
+ */
+function withServiceTier(params, serviceTier) {
+  if (serviceTier == null) {
+    return params;
+  }
+  return { ...params, serviceTier };
+}
+
 /** @returns {ThreadStartParams} */
 function buildThreadParams(cwd, options = {}) {
-  return {
-    cwd,
-    model: options.model ?? null,
-    approvalPolicy: options.approvalPolicy ?? "never",
-    sandbox: options.sandbox ?? "read-only",
-    serviceName: SERVICE_NAME,
-    ephemeral: options.ephemeral ?? true
-  };
+  return withServiceTier(
+    {
+      cwd,
+      model: options.model ?? null,
+      approvalPolicy: options.approvalPolicy ?? "never",
+      sandbox: options.sandbox ?? "read-only",
+      serviceName: SERVICE_NAME,
+      ephemeral: options.ephemeral ?? true
+    },
+    options.serviceTier
+  );
 }
 
 /** @returns {ThreadResumeParams} */
 function buildResumeParams(threadId, cwd, options = {}) {
-  return {
-    threadId,
-    cwd,
-    model: options.model ?? null,
-    approvalPolicy: options.approvalPolicy ?? "never",
-    sandbox: options.sandbox ?? "read-only"
-  };
+  return withServiceTier(
+    {
+      threadId,
+      cwd,
+      model: options.model ?? null,
+      approvalPolicy: options.approvalPolicy ?? "never",
+      sandbox: options.sandbox ?? "read-only"
+    },
+    options.serviceTier
+  );
+}
+
+/** @returns {TurnStartParams} */
+function buildTurnStartParams(threadId, prompt, options = {}) {
+  return withServiceTier(
+    {
+      threadId,
+      input: buildTurnInput(prompt),
+      model: options.model ?? null,
+      effort: options.effort ?? null,
+      outputSchema: options.outputSchema ?? null
+    },
+    options.serviceTier
+  );
 }
 
 /** @returns {UserInput[]} */
@@ -1009,6 +1043,7 @@ export async function runAppServerReview(cwd, options = {}) {
     emitProgress(options.onProgress, "Starting Codex review thread.", "starting");
     const thread = await startThread(client, cwd, {
       model: options.model,
+      serviceTier: options.serviceTier,
       sandbox: "read-only",
       ephemeral: true,
       threadName: options.threadName
@@ -1105,6 +1140,7 @@ export async function runAppServerTurn(cwd, options = {}) {
       emitProgress(options.onProgress, `Resuming thread ${options.resumeThreadId}.`, "starting");
       const response = await resumeThread(client, options.resumeThreadId, cwd, {
         model: options.model,
+        serviceTier: options.serviceTier,
         sandbox: options.sandbox,
         ephemeral: false
       });
@@ -1113,6 +1149,7 @@ export async function runAppServerTurn(cwd, options = {}) {
       emitProgress(options.onProgress, "Starting Codex task thread.", "starting");
       const response = await startThread(client, cwd, {
         model: options.model,
+        serviceTier: options.serviceTier,
         sandbox: options.sandbox,
         ephemeral: options.persistThread ? false : true,
         threadName: options.persistThread ? options.threadName : options.threadName ?? null
@@ -1132,14 +1169,7 @@ export async function runAppServerTurn(cwd, options = {}) {
     const turnState = await captureTurn(
       client,
       threadId,
-      () =>
-        client.request("turn/start", {
-          threadId,
-          input: buildTurnInput(prompt),
-          model: options.model ?? null,
-          effort: options.effort ?? null,
-          outputSchema: options.outputSchema ?? null
-        }),
+      () => client.request("turn/start", buildTurnStartParams(threadId, prompt, options)),
       { onProgress: options.onProgress }
     );
 
