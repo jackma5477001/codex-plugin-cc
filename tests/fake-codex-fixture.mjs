@@ -298,6 +298,62 @@ rl.on("line", (line) => {
         send({ id: message.id, result: buildAccountReadResult() });
         break;
 
+      case "account/rateLimits/read":
+        send({
+          id: message.id,
+          result: {
+            ordinaryUsageAllowed: true,
+            accountId: "acct_fake",
+            rateLimits: {
+              limitId: "codex",
+              limitName: "Codex",
+              normalModelSlug: null,
+              primary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 1794941714 },
+              secondary: null,
+              credits: { hasCredits: false, unlimited: false, balance: "0" },
+              individualLimit: null,
+              spendControlReached: false,
+              planType: "prolite",
+              rateLimitReachedType: null
+            },
+            rateLimitsByLimitId: null,
+            rateLimitResetCredits: {
+              availableCount: 2,
+              credits: [
+                {
+                  id: "credit_1",
+                  resetType: "codexRateLimits",
+                  status: "available",
+                  grantedAt: 1793477095,
+                  expiresAt: 1796069095,
+                  title: "Full reset",
+                  description: "Thanks for using Codex!"
+                }
+              ]
+            }
+          }
+        });
+        break;
+
+      case "account/usage/read":
+        send({
+          id: message.id,
+          result: {
+            summary: {
+              lifetimeTokens: 123456789,
+              peakDailyTokens: 9876543,
+              longestRunningTurnSec: 3600,
+              currentStreakDays: 3,
+              longestStreakDays: 40
+            },
+            dailyUsageBuckets: [
+              { startDate: "2026-11-10", tokens: 1000 },
+              { startDate: "2026-11-11", tokens: 2000 }
+            ]
+          }
+        });
+        break;
+
       case "config/read":
         if (BEHAVIOR === "config-read-fails") {
           throw new Error("config/read failed for cwd");
@@ -318,7 +374,10 @@ rl.on("line", (line) => {
           model: message.params.model ?? null,
           serviceTier: message.params.serviceTier ?? null,
           serviceTierProvided: Object.prototype.hasOwnProperty.call(message.params, "serviceTier"),
-          reasoningEffort: message.params.config?.model_reasoning_effort ?? null
+          reasoningEffort: message.params.config?.model_reasoning_effort ?? null,
+          approvalPolicy: message.params.approvalPolicy ?? null,
+          approvalsReviewer: message.params.approvalsReviewer ?? null,
+          sandbox: message.params.sandbox ?? null
         };
         saveState(state);
         send({ id: message.id, result: { thread: buildThread(thread), model: message.params.model || "gpt-6.1-sol", modelProvider: "openai", serviceTier: message.params.serviceTier ?? null, cwd: thread.cwd, approvalPolicy: "never", sandbox: { type: "readOnly", access: { type: "fullAccess" }, networkAccess: false }, reasoningEffort: null } });

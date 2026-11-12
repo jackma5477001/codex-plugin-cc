@@ -75,12 +75,14 @@ test("continue is not exposed as a user-facing command", () => {
   assert.deepEqual(commandFiles, [
     "adversarial-review.md",
     "cancel.md",
+    "image.md",
     "rescue.md",
     "result.md",
     "review.md",
     "setup.md",
     "status.md",
-    "transfer.md"
+    "transfer.md",
+    "usage.md"
   ]);
 });
 
@@ -90,42 +92,27 @@ test("rescue command absorbs continue semantics", () => {
   const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
   const runtimeSkill = read("skills/codex-cli-runtime/SKILL.md");
 
-  assert.match(rescue, /The final user-visible response must be Codex's output verbatim/i);
-  assert.match(rescue, /allowed-tools:\s*Bash\(node:\*\),\s*AskUserQuestion,\s*Agent/);
-  // Regression for #234: `Skill(codex:rescue)` from the main agent recursed
-  // because rescue.md named the routing with ambiguous prose ("Route this
-  // request to the `codex:codex-rescue` subagent") while running under
-  // `context: fork` — forked general-purpose subagents do not expose the
-  // `Agent` tool, so the fork fell back to `Skill` and re-entered this
-  // command. Pin the explicit transport and the inline (no-fork) execution.
-  assert.match(rescue, /subagent_type: "codex:codex-rescue"/);
-  assert.match(rescue, /do not call `Skill\(codex:codex-rescue\)`/i);
+  // The rescue command now calls the companion script directly. The old
+  // Agent-tool hop was dropped because it cost an extra model turn and a
+  // subagent session (the main cost complaint in the desktop app).
+  assert.match(rescue, /Do not call the[\s\S]*`Agent` tool/i);
+  assert.match(rescue, /do not invoke `Skill\(codex:codex-rescue\)`/i);
   assert.doesNotMatch(rescue, /^context:\s*fork\b/m);
+  assert.doesNotMatch(rescue, /subagent_type:/);
+  assert.match(rescue, /allowed-tools:\s*Bash\(node:\*\)/);
   assert.match(rescue, /--background\|--wait/);
   assert.match(rescue, /--resume\|--fresh/);
-  assert.match(rescue, /--model <model\|sol\|terra\|luna\|spark>/);
+  assert.match(rescue, /--model <model\|sol\|terra\|luna\|astra\|spark>/);
   assert.match(rescue, /--effort <none\|minimal\|low\|medium\|high\|xhigh\|max\|ultra>/);
   assert.match(rescue, /--fast/);
-  assert.match(rescue, /task-resume-candidate --json/);
-  assert.match(rescue, /AskUserQuestion/);
-  assert.match(rescue, /Continue current Codex thread/);
-  assert.match(rescue, /Start a new Codex thread/);
-  assert.match(rescue, /run the `codex:codex-rescue` subagent in the background/i);
-  assert.match(rescue, /default to foreground/i);
-  assert.match(rescue, /Do not forward them to `task`/i);
-  assert.match(rescue, /`--model` and `--effort` are runtime-selection flags/i);
-  assert.match(rescue, /`--fast` is a runtime-selection flag/i);
-  assert.match(rescue, /Leave `--effort` unset unless the user explicitly asks for a specific reasoning effort/i);
-  assert.match(rescue, /Current Codex model aliases are `sol` → `gpt-6\.1-sol`/i);
-  assert.match(rescue, /If the request includes `--resume`, do not ask whether to continue/i);
-  assert.match(rescue, /If the request includes `--fresh`, do not ask whether to continue/i);
-  assert.match(rescue, /If the user chooses continue, add `--resume`/i);
-  assert.match(rescue, /If the user chooses a new thread, add `--fresh`/i);
-  assert.match(rescue, /thin forwarder only/i);
-  assert.match(rescue, /Return the Codex companion stdout verbatim to the user/i);
-  assert.match(rescue, /Do not paraphrase, summarize, rewrite, or add commentary before or after it/i);
-  assert.match(rescue, /return that command's stdout as-is/i);
-  assert.match(rescue, /Leave `--resume` and `--fresh` in the forwarded request/i);
+  assert.match(rescue, /--approval <never\|on-request\|untrusted\|auto>/);
+  assert.match(rescue, /run_in_background: true/);
+  assert.match(rescue, /preserve the user's raw arguments exactly/i);
+  assert.match(rescue, /`--model`, `--effort`, `--fast`, and `--approval` are runtime-selection flags/i);
+  assert.match(rescue, /the script already continues the latest thread for follow-up phrasing/i);
+  assert.match(rescue, /Return that command's stdout verbatim, exactly as-is/i);
+  assert.match(rescue, /Do not paraphrase, summarize, rewrite, or add commentary/i);
+  assert.match(rescue, /\/codex:setup/);
   assert.match(agent, /--resume/);
   assert.match(agent, /--fresh/);
   assert.match(agent, /thin forwarding wrapper/i);
@@ -157,7 +144,10 @@ test("rescue command absorbs continue semantics", () => {
   assert.match(runtimeSkill, /`--fast`: Codex speed mode/i);
   assert.match(runtimeSkill, /Do not inspect the repository, read files, grep, monitor progress, poll status, fetch results, cancel jobs, summarize output, or do any follow-up work of your own/i);
   assert.match(runtimeSkill, /If the Bash call fails or Codex cannot be invoked, return nothing/i);
-  assert.match(readme, /`codex:codex-rescue` subagent/i);
+  assert.match(readme, /codex:codex-rescue/i);
+  assert.match(readme, /It deliberately skips the `Agent` tool hop/i);
+  assert.match(readme, /### `\/codex:usage`/);
+  assert.match(readme, /### `\/codex:image`/);
   assert.match(readme, /if you do not pass `--model`, `--effort`, or `--fast`, Codex chooses its own defaults/i);
   assert.match(readme, /--model gpt-6\.1-terra --effort high --fast/i);
   assert.match(readme, /the legacy alias `spark` maps to `gpt-6-luna`/i);

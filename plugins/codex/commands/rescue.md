@@ -1,51 +1,53 @@
 ---
-description: Delegate investigation, an explicit fix request, or follow-up rescue work to the Codex rescue subagent
-argument-hint: "[--background|--wait] [--resume|--fresh] [--model <model|sol|terra|luna|spark>] [--effort <none|minimal|low|medium|high|xhigh|max|ultra>] [--fast] [what Codex should investigate, solve, or continue]"
-allowed-tools: Bash(node:*), AskUserQuestion, Agent
+description: Delegate investigation, an explicit fix request, or follow-up rescue work to Codex
+argument-hint: "[--background|--wait] [--resume|--fresh] [--model <model|sol|terra|luna|astra|spark>] [--effort <none|minimal|low|medium|high|xhigh|max|ultra>] [--fast] [--approval <never|on-request|untrusted|auto>] [what Codex should investigate, solve, or continue]"
+allowed-tools: Bash(node:*)
 ---
 
-Invoke the `codex:codex-rescue` subagent via the `Agent` tool (`subagent_type: "codex:codex-rescue"`), forwarding the raw user request as the prompt.
-`codex:codex-rescue` is a subagent, not a skill — do not call `Skill(codex:codex-rescue)` (no such skill) or `Skill(codex:rescue)` (that re-enters this command and hangs the session). The command runs inline so the `Agent` tool stays in scope; forked general-purpose subagents do not expose it.
-The final user-visible response must be Codex's output verbatim.
+Run Codex through the companion script. The companion script is the only worker: do not call the
+`Agent` tool, do not invoke `Skill(codex:codex-rescue)`, and do not do the work yourself.
 
 Raw user request:
-$ARGUMENTS
 
-Execution mode:
+`$ARGUMENTS`
 
-- If the request includes `--background`, run the `codex:codex-rescue` subagent in the background.
-- If the request includes `--wait`, run the `codex:codex-rescue` subagent in the foreground.
-- If neither flag is present, default to foreground.
-- `--background` and `--wait` are execution flags for Claude Code. Do not forward them to `task`, and do not treat them as part of the natural-language task text.
-- `--model` and `--effort` are runtime-selection flags. Preserve them for the forwarded `task` call, but do not treat them as part of the natural-language task text.
-- `--fast` is a runtime-selection flag for Codex speed mode. Preserve it for the forwarded `task` call, but do not treat it as part of the natural-language task text.
-- If the request includes `--resume`, do not ask whether to continue. The user already chose.
-- If the request includes `--fresh`, do not ask whether to continue. The user already chose.
-- Otherwise, before starting Codex, check for a resumable rescue thread from this Claude session by running:
+## Fast path — no confirmation needed
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task-resume-candidate --json
+If the request includes `--background`, or it does not need a resume decision, run it directly:
+
+- When the raw request contains `--background`, launch it detached and report the job id:
+
+```typescript
+Bash({
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "$ARGUMENTS"`,
+  description: "Codex rescue",
+  run_in_background: true
+})
 ```
 
-- If that helper reports `available: true`, use `AskUserQuestion` exactly once to ask whether to continue the current Codex thread or start a new one.
-- The two choices must be:
-  - `Continue current Codex thread`
-  - `Start a new Codex thread`
-- If the user is clearly giving a follow-up instruction such as "continue", "keep going", "resume", "apply the top fix", or "dig deeper", put `Continue current Codex thread (Recommended)` first.
-- Otherwise put `Start a new Codex thread (Recommended)` first.
-- If the user chooses continue, add `--resume` before routing to the subagent.
-- If the user chooses a new thread, add `--fresh` before routing to the subagent.
-- If the helper reports `available: false`, do not ask. Route normally.
+- Otherwise run it in the foreground:
 
-Operating rules:
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "$ARGUMENTS"
+```
 
-- The subagent is a thin forwarder only. It should use one `Bash` call to invoke `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task ...` and return that command's stdout as-is.
-- Return the Codex companion stdout verbatim to the user.
-- Do not paraphrase, summarize, rewrite, or add commentary before or after it.
-- Do not ask the subagent to inspect files, monitor progress, poll `/codex:status`, fetch `/codex:result`, call `/codex:cancel`, summarize output, or do follow-up work of its own.
-- Leave `--effort` unset unless the user explicitly asks for a specific reasoning effort.
-- Leave the model unset unless the user explicitly asks for one. Current Codex model aliases are `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, `astra` → `gpt-6-astra`, and the legacy alias `spark` → `gpt-6-luna`. Pass any other concrete model name through unchanged.
-- Add `--fast` only when the user asks for fast/speed mode; leave it off otherwise.
-- Leave `--resume` and `--fresh` in the forwarded request. The subagent handles that routing when it builds the `task` command.
-- If the helper reports that Codex is missing or unauthenticated, stop and tell the user to run `/codex:setup`.
-- If the user did not supply a request, ask what Codex should investigate or fix.
+Return that command's stdout verbatim, exactly as-is, with no commentary before or after it.
+
+The companion script resolves model aliases, speed mode, effort, approval mode, and implicit
+resume on its own. Do not ask the user about resuming and do not add `--resume` or `--fresh`
+yourself: the script already continues the latest thread for follow-up phrasing such as
+"continue", "keep going", "apply the top fix", or "dig deeper", and starts a new thread when no
+previous task exists.
+
+## Argument rules
+
+- Preserve the user's raw arguments exactly. Do not strip, reorder, or rewrite flags.
+- `--model`, `--effort`, `--fast`, and `--approval` are runtime-selection flags. Pass them through
+  unchanged and never treat them as part of the natural-language task text.
+- Model aliases: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`,
+  `astra` → `gpt-6-astra`, legacy `spark` → `gpt-6-luna`.
+- Leave `--effort`, `--model`, `--fast`, and `--approval` unset unless the user asked for them.
+- Do not paraphrase, summarize, rewrite, or add commentary around the command output.
+- If the companion script reports that Codex is missing or unauthenticated, tell the user to run
+  `/codex:setup`.
+- If the user supplied no request at all, ask what Codex should investigate or fix.

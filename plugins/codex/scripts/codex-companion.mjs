@@ -13,6 +13,7 @@ import {
     findLatestTaskThread,
     getCodexAuthStatus,
     getCodexAvailability,
+    getCodexUsage,
     getSessionRuntimeStatus,
     importExternalAgentSession,
     interruptAppServerTurn,
@@ -61,7 +62,8 @@ import {
   renderJobStatusReport,
   renderSetupReport,
   renderStatusReport,
-  renderTaskResult
+  renderTaskResult,
+  renderUsageReport
 } from "./lib/render.mjs";
 
 const ROOT_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -83,6 +85,9 @@ const MODEL_ALIASES = new Map([
 const FAST_SERVICE_TIER = "priority";
 const VALID_SERVICE_TIERS = new Set([FAST_SERVICE_TIER, "default"]);
 const FAST_MODE_ALIASES = new Set([FAST_SERVICE_TIER, "fast", "true", "1"]);
+// Codex approval modes. `auto` routes approval requests through Codex's own
+// risk-reviewing subagent instead of prompting the user.
+const VALID_APPROVAL_MODES = new Set(["never", "on-request", "untrusted", "auto"]);
 const STOP_REVIEW_TASK_MARKER = "Run a stop-gate review of the previous Claude turn.";
 
 function printUsage() {
@@ -92,7 +97,9 @@ function printUsage() {
       "  node scripts/codex-companion.mjs setup [--enable-review-gate|--disable-review-gate] [--json]",
       "  node scripts/codex-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model|alias>] [--effort <level>] [--fast]",
       "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model|alias>] [--effort <level>] [--fast] [focus text]",
-      "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|alias>] [--effort <none|minimal|low|medium|high|xhigh|max|ultra>] [--fast] [prompt]",
+      "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|alias>] [--effort <level>] [--fast] [--approval <never|on-request|untrusted|auto>] [prompt]",
+      "  node scripts/codex-companion.mjs usage [--json] [--no-usage]",
+      "  node scripts/codex-companion.mjs image [--background] [--model <model|alias>] [--fast] [--approval <mode>] <description>",
       "  node scripts/codex-companion.mjs transfer [--source <claude-jsonl>] [--json]",
       "  node scripts/codex-companion.mjs status [job-id] [--all] [--json]",
       "  node scripts/codex-companion.mjs result [job-id] [--json]",
@@ -155,6 +162,27 @@ function normalizeServiceTier(tier) {
     return normalized;
   }
   throw new Error(`Unsupported speed mode "${tier}". Use --fast, or --speed <fast|default>.`);
+}
+
+function resolveApprovalMode(mode) {
+  if (mode == null) {
+    return { approvalPolicy: null, approvalsReviewer: null };
+  }
+  const normalized = String(mode).trim().toLowerCase();
+  if (!normalized) {
+    return { approvalPolicy: null, approvalsReviewer: null };
+  }
+  if (!VALID_APPROVAL_MODES.has(normalized)) {
+    throw new Error(
+      `Unsupported approval mode "${mode}". Use one of: never, on-request, untrusted, auto.`
+    );
+  }
+  if (normalized === "auto") {
+    // Codex's "approve for me" mode: workspace-write plus a risk-reviewing
+    // subagent that decides on approval requests instead of asking the user.
+    return { approvalPolicy: "on-request", approvalsReviewer: "auto_review" };
+  }
+  return { approvalPolicy: normalized, approvalsReviewer: null };
 }
 
 function normalizeArgv(argv) {
@@ -345,6 +373,19 @@ function findLatestResumableTaskJob(jobs) {
   );
 }
 
+const FOLLOW_UP_PATTERN =
+  /\b(continue|continuing|keep going|resume|carry on|go on|apply the (top|first) fix|dig deeper|follow up|next step)\b/i;
+
+/**
+ * Decides whether a rescue request should continue the previous Codex thread
+ * instead of starting a new one. Doing this in the script removes the
+ * AskUserQuestion round trip from the hot path, which matters most when the
+ * command is driven from the desktop app.
+ */
+function looksLikeFollowUpPrompt(prompt) {
+  return FOLLOW_UP_PATTERN.test(String(prompt ?? ""));
+}
+
 async function waitForSingleJobSnapshot(cwd, reference, options = {}) {
   const timeoutMs = Math.max(0, Number(options.timeoutMs) || DEFAULT_STATUS_WAIT_TIMEOUT_MS);
   const pollIntervalMs = Math.max(100, Number(options.pollIntervalMs) || DEFAULT_STATUS_POLL_INTERVAL_MS);
@@ -523,6 +564,8 @@ async function executeTaskRun(request) {
     model: request.model,
     effort: request.effort,
     serviceTier: request.serviceTier,
+    approvalPolicy: request.approvalPolicy,
+    approvalsReviewer: request.approvalsReviewer,
     sandbox: request.write ? "workspace-write" : "read-only",
     onProgress: request.onProgress,
     persistThread: true,
@@ -636,12 +679,14 @@ function buildTaskJob(workspaceRoot, taskMetadata, write) {
   });
 }
 
-function buildTaskRequest({ cwd, model, effort, serviceTier, prompt, write, resumeLast, jobId }) {
+function buildTaskRequest({ cwd, model, effort, serviceTier, approvalPolicy, approvalsReviewer, prompt, write, resumeLast, jobId }) {
   return {
     cwd,
     model,
     effort,
     serviceTier,
+    approvalPolicy,
+    approvalsReviewer,
     prompt,
     write,
     resumeLast,
@@ -802,7 +847,7 @@ async function handleReview(argv) {
 
 async function handleTask(argv) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["model", "effort", "cwd", "prompt-file", "speed"],
+    valueOptions: ["model", "effort", "cwd", "prompt-file", "speed", "approval"],
     booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background", "fast"],
     aliasMap: {
       m: "model"
@@ -814,7 +859,7 @@ async function handleTask(argv) {
   const model = normalizeRequestedModel(options.model);
   const effort = normalizeReasoningEffort(options.effort);
   const serviceTier = normalizeServiceTier(options.fast ? FAST_SERVICE_TIER : options.speed);
-  const prompt = readTaskPrompt(cwd, options, positionals);
+  const { approvalPolicy, approvalsReviewer } = resolveApprovalMode(options.approval);
 
   const resumeLast = Boolean(options["resume-last"] || options.resume);
   const fresh = Boolean(options.fresh);
@@ -822,14 +867,23 @@ async function handleTask(argv) {
     throw new Error("Choose either --resume/--resume-last or --fresh.");
   }
   const write = Boolean(options.write);
+  const prompt = readTaskPrompt(cwd, options, positionals);
+
+  // Implicit resume keeps the fast path free of an AskUserQuestion round trip:
+  // an explicit follow-up phrasing continues the latest thread on its own.
+  const implicitResume = !resumeLast && !fresh && looksLikeFollowUpPrompt(prompt);
+  const implicitResumeFallback = implicitResume && !findLatestResumableTaskJob(
+    filterJobsForCurrentClaudeSession(sortJobsNewestFirst(listJobs(workspaceRoot)))
+  );
+  const effectiveResumeLast = (resumeLast || implicitResume) && !implicitResumeFallback;
   const taskMetadata = buildTaskRunMetadata({
     prompt,
-    resumeLast
+    resumeLast: effectiveResumeLast
   });
 
   if (options.background) {
     ensureCodexAvailable(cwd);
-    requireTaskRequest(prompt, resumeLast);
+    requireTaskRequest(prompt, effectiveResumeLast);
 
     const job = buildTaskJob(workspaceRoot, taskMetadata, write);
     const request = buildTaskRequest({
@@ -837,9 +891,11 @@ async function handleTask(argv) {
       model,
       effort,
       serviceTier,
+      approvalPolicy,
+      approvalsReviewer,
       prompt,
       write,
-      resumeLast,
+      resumeLast: effectiveResumeLast,
       jobId: job.id
     });
     const { payload } = enqueueBackgroundTask(cwd, job, request);
@@ -856,9 +912,11 @@ async function handleTask(argv) {
         model,
         effort,
         serviceTier,
+        approvalPolicy,
+        approvalsReviewer,
         prompt,
         write,
-        resumeLast,
+        resumeLast: effectiveResumeLast,
         jobId: job.id,
         onProgress: progress
       }),
@@ -877,6 +935,87 @@ async function handleTransfer(argv) {
     source: options.source
   });
   outputCommandResult(payload, rendered, options.json);
+}
+
+async function handleUsage(argv) {
+  const { options } = parseCommandInput(argv, {
+    valueOptions: ["cwd"],
+    booleanOptions: ["json", "no-usage"]
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const report = await getCodexUsage(cwd, { includeUsage: !options["no-usage"] });
+  outputResult(options.json ? report : renderUsageReport(report), options.json);
+}
+
+const IMAGE_PROMPT_PREFIX =
+  "Generate an image and save it as a file in the current working directory. Use the built-in image generation tool.";
+
+function buildImagePrompt(description) {
+  const normalized = String(description ?? "").trim();
+  if (!normalized) {
+    throw new Error("Provide an image description, e.g. `/codex:image a red apple on a white background`.");
+  }
+  return `${IMAGE_PROMPT_PREFIX}\n\nImage description:\n${normalized}\n\nAfter saving, report the absolute path of the generated image file and nothing else.`;
+}
+
+async function handleImage(argv) {
+  const { options, positionals } = parseCommandInput(argv, {
+    valueOptions: ["model", "effort", "cwd", "speed", "approval"],
+    booleanOptions: ["json", "background", "fast"],
+    aliasMap: {
+      m: "model"
+    }
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const workspaceRoot = resolveCommandWorkspace(options);
+  const prompt = buildImagePrompt(positionals.join(" "));
+  const model = normalizeRequestedModel(options.model);
+  const effort = normalizeReasoningEffort(options.effort);
+  const serviceTier = normalizeServiceTier(options.fast ? FAST_SERVICE_TIER : options.speed);
+  const { approvalPolicy, approvalsReviewer } = resolveApprovalMode(options.approval ?? "auto");
+  const metadata = { title: "Codex Image", summary: shorten(positionals.join(" ")) };
+
+  if (options.background) {
+    ensureCodexAvailable(cwd);
+    const job = buildTaskJob(workspaceRoot, metadata, true);
+    const request = buildTaskRequest({
+      cwd,
+      model,
+      effort,
+      serviceTier,
+      approvalPolicy,
+      approvalsReviewer,
+      prompt,
+      write: true,
+      resumeLast: false,
+      jobId: job.id
+    });
+    const { payload } = enqueueBackgroundTask(cwd, job, request);
+    outputCommandResult(payload, renderQueuedTaskLaunch(payload), options.json);
+    return;
+  }
+
+  const job = buildTaskJob(workspaceRoot, metadata, true);
+  await runForegroundCommand(
+    job,
+    (progress) =>
+      executeTaskRun({
+        cwd,
+        model,
+        effort,
+        serviceTier,
+        approvalPolicy,
+        approvalsReviewer,
+        prompt,
+        write: true,
+        resumeLast: false,
+        jobId: job.id,
+        onProgress: progress
+      }),
+    { json: options.json }
+  );
 }
 
 async function handleTaskWorker(argv) {
@@ -1086,6 +1225,12 @@ async function main() {
       break;
     case "task":
       await handleTask(argv);
+      break;
+    case "usage":
+      await handleUsage(argv);
+      break;
+    case "image":
+      await handleImage(argv);
       break;
     case "transfer":
       await handleTransfer(argv);

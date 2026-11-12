@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.8
+
+- Added `/codex:usage` to read the plan, rate limits, reset credits, and lifetime token usage from the Codex app server.
+- Added `/codex:image` to generate images through Codex's built-in image tool and save them into the workspace.
+- Added `--approval <never|on-request|untrusted|auto>`. `auto` maps to `approvalPolicy: "on-request"` plus `approvalsReviewer: "auto_review"`, so Codex reviews its own approval requests instead of prompting.
+- `/codex:rescue` now calls the companion script directly instead of routing through the `Agent` tool and the `codex:codex-rescue` subagent. This removes one model turn and one subagent session per rescue run, which matters most in the desktop app.
+- The companion script now resolves implicit resume itself, so a follow-up prompt continues the latest thread without an `AskUserQuestion` round trip.
+- `/codex:review` and `/codex:adversarial-review` accept `--effort`.
+
 ## 1.0.7
 
 - Updated the Codex model aliases to the current catalog: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, `astra` → `gpt-6-astra`. The legacy alias `spark` now maps to `gpt-6-luna`.

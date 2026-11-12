@@ -463,3 +463,102 @@ export function renderCancelReport(job) {
 
   return `${lines.join("\n").trimEnd()}\n`;
 }
+
+function formatTokenCount(value) {
+  if (value == null || !Number.isFinite(Number(value))) {
+    return "unknown";
+  }
+  return Number(value).toLocaleString("en-US");
+}
+
+function formatWindow(window) {
+  if (!window) {
+    return "not reported";
+  }
+  const used = Number.isFinite(window.usedPercent) ? `${window.usedPercent}% used` : "usage unknown";
+  const remaining =
+    Number.isFinite(window.remainingPercent) ? `${window.remainingPercent}% remaining` : null;
+  const duration = Number.isFinite(window.windowDurationMins)
+    ? `over ${Math.round(window.windowDurationMins / 60 / 24)}d window`
+    : null;
+  const reset = window.resetsAtIso ? `resets ${window.resetsAtIso}` : null;
+  return [used, remaining, duration, reset].filter(Boolean).join(", ");
+}
+
+function appendRateLimitLines(lines, label, snapshot) {
+  if (!snapshot) {
+    return;
+  }
+  lines.push(`${label}:`);
+  lines.push(`- primary: ${formatWindow(snapshot.primary)}`);
+  if (snapshot.secondary) {
+    lines.push(`- secondary: ${formatWindow(snapshot.secondary)}`);
+  }
+  if (snapshot.credits) {
+    const credits = snapshot.credits.unlimited
+      ? "unlimited"
+      : `${snapshot.credits.balance ?? "0"} balance`;
+    lines.push(`- credits: ${snapshot.credits.hasCredits ? credits : "none"}`);
+  }
+  if (snapshot.spendControlReached) {
+    lines.push("- spend control: limit reached");
+  }
+  lines.push("");
+}
+
+export function renderUsageReport(report) {
+  const lines = ["# Codex Usage", ""];
+
+  if (report.planType) {
+    lines.push(`Plan: ${report.planType}`);
+  }
+  if (report.ordinaryUsageAllowed === false) {
+    lines.push("Included usage: not allowed by the backend for this account");
+  }
+  lines.push("");
+
+  appendRateLimitLines(lines, "Rate limits", report.rateLimits);
+
+  const buckets = report.rateLimitsByLimitId
+    ? Object.entries(report.rateLimitsByLimitId).filter(([, value]) => value)
+    : [];
+  for (const [limitId, snapshot] of buckets) {
+    if (limitId === "codex") {
+      continue;
+    }
+    appendRateLimitLines(lines, `Rate limits (${limitId})`, snapshot);
+  }
+
+  if (report.resetCredits) {
+    const { availableCount, credits } = report.resetCredits;
+    lines.push(`Rate limit reset credits: ${availableCount} available`);
+    for (const credit of credits ?? []) {
+      const expiry = credit.expiresAtIso ? `, expires ${credit.expiresAtIso}` : "";
+      lines.push(`- ${credit.title ?? "Reset credit"}${expiry}`);
+    }
+    lines.push("");
+  }
+
+  if (report.usage) {
+    const summary = report.usage.summary;
+    lines.push("Token usage:");
+    lines.push(`- lifetime: ${formatTokenCount(summary.lifetimeTokens)} tokens`);
+    lines.push(`- peak day: ${formatTokenCount(summary.peakDailyTokens)} tokens`);
+    lines.push(
+      `- streak: ${summary.currentStreakDays ?? 0} day(s), longest ${summary.longestStreakDays ?? 0}`
+    );
+    if (summary.longestRunningTurnSec != null) {
+      lines.push(`- longest turn: ${Math.round(summary.longestRunningTurnSec / 60)} min`);
+    }
+    const bucketsByName = report.usage.dailyUsageBuckets;
+    if (Array.isArray(bucketsByName) && bucketsByName.length > 0) {
+      const recent = bucketsByName.slice(-7);
+      lines.push(`- recent days: ${recent.map((b) => `${b.startDate}=${formatTokenCount(b.tokens)}`).join(", ")}`);
+    }
+    lines.push("");
+  } else if (report.usageError) {
+    lines.push(`Token usage unavailable: ${report.usageError}`, "");
+  }
+
+  return `${lines.join("\n").trimEnd()}\n`;
+}

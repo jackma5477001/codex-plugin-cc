@@ -83,6 +83,9 @@ function buildThreadParams(cwd, options = {}) {
     serviceName: SERVICE_NAME,
     ephemeral: options.ephemeral ?? true
   };
+  if (options.approvalsReviewer) {
+    params.approvalsReviewer = options.approvalsReviewer;
+  }
   if (options.effort) {
     // `review/start` has no per-turn effort field, so the reasoning level has
     // to be set on the thread. Passing it through `config` keeps the user's
@@ -995,8 +998,148 @@ export async function getCodexAuthStatus(cwd, options = {}) {
   }
 }
 
-export async function interruptAppServerTurn(cwd, { threadId, turnId }) {
-  if (!threadId || !turnId) {
+function toNumberOrNull(value) {
+  if (value == null) {
+    return null;
+  }
+  const parsed = typeof value === "bigint" ? Number(value) : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeRateLimitWindow(window) {
+  if (!window) {
+    return null;
+  }
+  return {
+    usedPercent: toNumberOrNull(window.usedPercent),
+    remainingPercent: window.usedPercent == null ? null : Math.max(0, 100 - Number(window.usedPercent)),
+    windowDurationMins: toNumberOrNull(window.windowDurationMins),
+    resetsAt: toNumberOrNull(window.resetsAt),
+    resetsAtIso: window.resetsAt == null ? null : new Date(Number(window.resetsAt) * 1000).toISOString()
+  };
+}
+
+function normalizeCredits(credits) {
+  if (!credits) {
+    return null;
+  }
+  return {
+    hasCredits: Boolean(credits.hasCredits),
+    unlimited: Boolean(credits.unlimited),
+    balance: credits.balance ?? null
+  };
+}
+
+function normalizeRateLimitSnapshot(snapshot) {
+  if (!snapshot) {
+    return null;
+  }
+  return {
+    limitId: snapshot.limitId ?? null,
+    limitName: snapshot.limitName ?? null,
+    normalModelSlug: snapshot.normalModelSlug ?? null,
+    planType: snapshot.planType ?? null,
+    primary: normalizeRateLimitWindow(snapshot.primary),
+    secondary: normalizeRateLimitWindow(snapshot.secondary),
+    credits: normalizeCredits(snapshot.credits),
+    spendControlReached: snapshot.spendControlReached ?? null,
+    rateLimitReachedType: snapshot.rateLimitReachedType ?? null
+  };
+}
+
+function normalizeResetCredits(summary) {
+  if (!summary) {
+    return null;
+  }
+  const credits = Array.isArray(summary.credits)
+    ? summary.credits.map((credit) => ({
+        id: credit.id,
+        status: credit.status ?? null,
+        title: credit.title ?? null,
+        description: credit.description ?? null,
+        grantedAt: toNumberOrNull(credit.grantedAt),
+        grantedAtIso: credit.grantedAt == null ? null : new Date(Number(credit.grantedAt) * 1000).toISOString(),
+        expiresAt: toNumberOrNull(credit.expiresAt),
+        expiresAtIso: credit.expiresAt == null ? null : new Date(Number(credit.expiresAt) * 1000).toISOString()
+      }))
+    : null;
+  return {
+    availableCount: toNumberOrNull(summary.availableCount) ?? 0,
+    credits
+  };
+}
+
+function normalizeTokenUsage(usage) {
+  if (!usage) {
+    return null;
+  }
+  const summary = usage.summary ?? {};
+  const buckets = Array.isArray(usage.dailyUsageBuckets)
+    ? usage.dailyUsageBuckets.map((bucket) => ({
+        startDate: bucket.startDate ?? null,
+        tokens: toNumberOrNull(bucket.tokens)
+      }))
+    : null;
+  return {
+    summary: {
+      lifetimeTokens: toNumberOrNull(summary.lifetimeTokens),
+      peakDailyTokens: toNumberOrNull(summary.peakDailyTokens),
+      longestRunningTurnSec: toNumberOrNull(summary.longestRunningTurnSec),
+      currentStreakDays: toNumberOrNull(summary.currentStreakDays),
+      longestStreakDays: toNumberOrNull(summary.longestStreakDays)
+    },
+    dailyUsageBuckets: buckets
+  };
+}
+
+/**
+ * Reads the account's quota state and lifetime token usage from the Codex app
+ * server. Both RPCs are best-effort: a backend that does not expose usage must
+ * not break the quota report, and vice versa.
+ */
+export async function getCodexUsage(cwd, options = {}) {
+  const availability = getCodexAvailability(cwd);
+  if (!availability.available) {
+    throw new Error(
+      "Codex CLI is not installed or is missing required runtime support. Install it with `npm install -g @openai/codex`, then rerun `/codex:setup`."
+    );
+  }
+
+  return withAppServer(cwd, async (client) => {
+    const rateLimitsResponse = await client.request("account/rateLimits/read", {});
+    const rateLimits = rateLimitsResponse.rateLimits ?? null;
+    const buckets = rateLimitsResponse.rateLimitsByLimitId ?? null;
+
+    let usageError = null;
+    let usage = null;
+    if (options.includeUsage !== false) {
+      try {
+        usage = normalizeTokenUsage(await client.request("account/usage/read", {}));
+      } catch (error) {
+        usageError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    return {
+      source: client.transport === "broker" ? "broker" : "direct",
+      planType: rateLimits?.planType ?? null,
+      accountId: rateLimitsResponse.accountId ?? null,
+      ordinaryUsageAllowed: rateLimitsResponse.ordinaryUsageAllowed ?? null,
+      rateLimits: normalizeRateLimitSnapshot(rateLimits),
+      rateLimitsByLimitId:
+        buckets && typeof buckets === "object"
+          ? Object.fromEntries(
+              Object.entries(buckets).map(([limitId, snapshot]) => [limitId, normalizeRateLimitSnapshot(snapshot)])
+            )
+          : null,
+      resetCredits: normalizeResetCredits(rateLimitsResponse.rateLimitResetCredits),
+      usage,
+      usageError
+    };
+  });
+}
+
+export async function interruptAppServerTurn(cwd, { threadId, turnId }) {  if (!threadId || !turnId) {
     return {
       attempted: false,
       interrupted: false,
@@ -1049,6 +1192,8 @@ export async function runAppServerReview(cwd, options = {}) {
       model: options.model,
       effort: options.effort,
       serviceTier: options.serviceTier,
+      approvalPolicy: options.approvalPolicy,
+      approvalsReviewer: options.approvalsReviewer,
       sandbox: "read-only",
       ephemeral: true,
       threadName: options.threadName
@@ -1146,6 +1291,8 @@ export async function runAppServerTurn(cwd, options = {}) {
       const response = await resumeThread(client, options.resumeThreadId, cwd, {
         model: options.model,
         serviceTier: options.serviceTier,
+        approvalPolicy: options.approvalPolicy,
+        approvalsReviewer: options.approvalsReviewer,
         sandbox: options.sandbox,
         ephemeral: false
       });
@@ -1155,6 +1302,8 @@ export async function runAppServerTurn(cwd, options = {}) {
       const response = await startThread(client, cwd, {
         model: options.model,
         serviceTier: options.serviceTier,
+        approvalPolicy: options.approvalPolicy,
+        approvalsReviewer: options.approvalsReviewer,
         sandbox: options.sandbox,
         ephemeral: options.persistThread ? false : true,
         threadName: options.persistThread ? options.threadName : options.threadName ?? null

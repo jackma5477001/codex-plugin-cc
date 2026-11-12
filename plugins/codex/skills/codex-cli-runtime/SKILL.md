@@ -36,6 +36,8 @@ Command selection:
 - `--fresh`: always use a fresh `task` run, even if the request sounds like a follow-up.
 - `--effort`: accepted values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`.
 - `--fast`: Codex speed mode (`priority` service tier); roughly 2x speed at higher usage.
+- `--approval`: `never` (default), `on-request`, `untrusted`, or `auto`. `auto` routes approval requests through Codex's own risk-reviewing subagent instead of prompting the user.
+- The `task` command resolves implicit resume itself: a prompt that reads like a follow-up ("continue", "keep going", "apply the top fix", "dig deeper") continues the latest thread, and starts a fresh one when nothing is resumable.
 - `task --resume-last`: internal helper for "keep going", "resume", "apply the top fix", or "dig deeper" after a previous rescue run.
 
 Safety rules:

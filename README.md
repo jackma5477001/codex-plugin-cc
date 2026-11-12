@@ -62,7 +62,7 @@ If Codex is installed but not logged in yet, run:
 After install, you should see:
 
 - the slash commands listed below
-- the `codex:codex-rescue` subagent in `/agents`
+- the `codex:codex-rescue` subagent in `/agents` (kept for direct agent delegation; `/codex:rescue` itself calls the companion script without the subagent hop)
 
 One simple first run is:
 
@@ -129,7 +129,11 @@ This command is read-only. It does not fix code.
 
 ### `/codex:rescue`
 
-Hands a task to Codex through the `codex:codex-rescue` subagent.
+Hands a task to Codex by calling the companion script directly.
+
+It deliberately skips the `Agent` tool hop: no subagent is spawned, so a rescue run costs no
+extra Claude turn beyond the one that launches the command. The `codex:codex-rescue` subagent
+still exists in `/agents` for cases where you want Claude to delegate on its own.
 
 Use it when you want Codex to:
 
@@ -139,10 +143,10 @@ Use it when you want Codex to:
 - take a faster or cheaper pass with a smaller model
 
 > [!NOTE]
-> Depending on the task and the model you choose these tasks might take a long time and it's generally recommended to force the task to be in the background or move the agent to the background.
+> Depending on the task and the model you choose these tasks might take a long time and it's generally recommended to force the task to be in the background.
 
-It supports `--background`, `--wait`, `--resume`, and `--fresh`. If you omit `--resume` and `--fresh`, the plugin can offer to continue the latest rescue thread for this repo.
-It also accepts `--model <model|alias>`, `--effort <level>`, and `--fast`.
+It supports `--background`, `--wait`, `--resume`, and `--fresh`. If you omit `--resume` and `--fresh`, the companion script continues the latest rescue thread on its own when the request reads like a follow-up ("continue", "keep going", "apply the top fix", "dig deeper"), and starts a new thread otherwise.
+It also accepts `--model <model|alias>`, `--effort <level>`, `--fast`, and `--approval <never|on-request|untrusted|auto>`.
 
 Examples:
 
@@ -179,6 +183,19 @@ Every Codex command (`/codex:review`, `/codex:adversarial-review`, `/codex:rescu
 
 Fast mode is only honored for models whose catalog entry advertises it. The plugin forwards the tier to the Codex app server instead of hard-coding model names, so when Codex adds or retires models the flags keep working without a plugin update.
 
+### Approval modes
+
+Every write-capable Codex command (`/codex:rescue`, `/codex:image`) accepts `--approval <mode>`:
+
+| Mode | Behavior |
+| --- | --- |
+| `never` | Never ask. Codex runs unattended inside its sandbox (default for read-only work). |
+| `on-request` | Codex decides when a command needs approval and prompts for it. |
+| `untrusted` | Only trusted commands run without approval. |
+| `auto` | **Codex's "approve for me" mode.** Approval requests are routed to a risk-reviewing subagent instead of interrupting you. |
+
+`--approval auto` maps to `approvalPolicy: "on-request"` plus `approvalsReviewer: "auto_review"`, which is the same mechanism Codex uses for its own `--approve-for-me` flag. `/codex:image` uses `auto` by default so image generation does not stop for a prompt.
+
 ### `/codex:transfer`
 
 Creates a persistent Codex thread from the current Claude Code session and prints a `codex resume <session-id>` command.
@@ -193,6 +210,37 @@ Examples:
 ```
 
 The plugin's existing `SessionStart` hook supplies the current transcript path automatically; `--source` is available as a manual override. The transfer uses Codex's external-agent session importer, so it follows the same conversion rules as importing Claude history in the Codex App and creates visible turns that can be continued in the App or TUI. The source must be under `~/.claude/projects`, and older Codex versions that do not expose session import must be upgraded before using this command.
+
+### `/codex:usage`
+
+Shows the Codex plan, remaining rate limits, reset credits, and lifetime token usage.
+
+Examples:
+
+```bash
+/codex:usage
+/codex:usage --json
+/codex:usage --no-usage
+```
+
+This is read-only: it queries the Codex app server's account quota endpoints and never runs a
+model turn.
+
+### `/codex:image`
+
+Generates an image through Codex and saves it into your workspace.
+
+Examples:
+
+```bash
+/codex:image a red apple on a white background
+/codex:image --model sol --fast a paper boat on a wooden table
+/codex:image --background a minimal app icon for a CLI tool
+```
+
+Codex uses its built-in image generation tool and writes the result to the current directory.
+The command defaults to `--approval auto`, so Codex reviews its own approval requests instead of
+stopping to ask. `--background` queues it like any other job and reports the job id.
 
 ### `/codex:status`
 
