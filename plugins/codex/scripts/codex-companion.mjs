@@ -197,11 +197,18 @@ function resolveApprovalMode(mode) {
 /**
  * Rescue used to run through the `codex:codex-rescue` subagent, which added
  * `--write` for implementation work by default. Now that the command calls the
- * script directly, that default has to live here, otherwise an ordinary
- * "fix this" request silently runs read-only.
+ * script directly, that default has to live here.
+ *
+ * The inference is deliberately asymmetric: a write run is only enabled when
+ * the request clearly asks for a change. Anything unrecognized or explicitly
+ * read-only stays read-only, because the default approval policy is `never`,
+ * so a wrong write guess would edit the working tree unattended.
  */
+const EDIT_INTENT_PATTERN =
+  /\b(fix|fixes|fixing|implement|implementing|patch|refactor|refactoring|add|adding|create|creating|update|updating|rename|renaming|remove|removing|delete|deleting|migrate|migrating|rewrite|rewriting|apply (the|this|that) (fix|change|patch)|make (the|this|that) change|write (the|a) code)\b/i;
+
 const READ_ONLY_INTENT_PATTERN =
-  /\b(review|investigate|diagnose|diagnosis|analy[sz]e|research|explain|summari[sz]e|look into|why (is|does|did)|read[- ]only|do not (change|edit|modify)|without (changing|editing|modifying))\b/i;
+  /\b(review|investigate|diagnose|diagnosis|analy[sz]e|research|explain|summari[sz]e|look into|why (is|does|did)|read[- ]only|do not (change|edit|modify|touch)|don't (change|edit|modify|touch)|without (changing|editing|modifying|making)|no changes?|no edits?)\b/i;
 
 function resolveTaskWriteMode(options, prompt) {
   if (options["read-only"]) {
@@ -210,12 +217,17 @@ function resolveTaskWriteMode(options, prompt) {
   if (options.write) {
     return true;
   }
-  if (!prompt || looksLikeFollowUpPrompt(prompt)) {
+  const text = String(prompt ?? "");
+  if (!text || looksLikeFollowUpPrompt(text)) {
     // A bare "continue" inherits the thread's previous behavior; do not
     // silently escalate a resumed read-only investigation into a write run.
     return false;
   }
-  return !READ_ONLY_INTENT_PATTERN.test(String(prompt));
+  // A read-only signal always wins over an edit signal.
+  if (READ_ONLY_INTENT_PATTERN.test(text)) {
+    return false;
+  }
+  return EDIT_INTENT_PATTERN.test(text);
 }
 
 function normalizeArgv(argv) {

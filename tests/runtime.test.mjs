@@ -1093,6 +1093,31 @@ test("task defaults implementation requests to write-capable and keeps investiga
   assert.equal(readState.lastThreadStart.sandbox, "read-only");
 });
 
+test("task keeps unclear and explicitly read-only requests read-only", () => {
+  const binDir = makeTempDir();
+
+  const cases = [
+    "Find the root cause without making any changes",
+    "do not edit anything, just tell me what is wrong",
+    "summarize the architecture",
+    "what does this module do"
+  ];
+
+  for (const prompt of cases) {
+    const repo = makeTempDir();
+    initGitRepo(repo);
+    installFakeCodex(binDir);
+
+    const result = run("node", [SCRIPT, "task", prompt], { cwd: repo, env: buildEnv(binDir) });
+    assert.equal(result.status, 0, result.stderr);
+
+    const statePath = path.join(binDir, "fake-codex-state.json");
+    const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    assert.equal(fakeState.lastThreadStart.sandbox, "read-only", prompt);
+    fs.rmSync(statePath, { force: true });
+  }
+});
+
 test("task --read-only overrides the write default", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
