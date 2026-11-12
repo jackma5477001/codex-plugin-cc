@@ -105,7 +105,7 @@ test("rescue command absorbs continue semantics", () => {
   assert.match(rescue, /--model <model\|sol\|terra\|luna\|astra\|spark>/);
   assert.match(rescue, /--effort <none\|minimal\|low\|medium\|high\|xhigh\|max\|ultra>/);
   assert.match(rescue, /--fast/);
-  assert.match(rescue, /--approval <never\|on-request\|untrusted\|auto>/);
+  assert.match(rescue, /--approval <never\|auto>/);
   assert.match(rescue, /run_in_background: true/);
   assert.match(rescue, /preserve the user's raw arguments exactly/i);
   assert.match(rescue, /`--model`, `--effort`, `--fast`, and `--approval` are runtime-selection flags/i);

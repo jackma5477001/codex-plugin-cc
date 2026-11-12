@@ -413,8 +413,14 @@ rl.on("line", (line) => {
         }
         const thread = ensureThread(state, message.params.threadId);
         thread.updatedAt = now();
+        state.lastResumeStart = {
+          threadId: thread.id,
+          approvalPolicy: message.params.approvalPolicy ?? null,
+          approvalsReviewer: message.params.approvalsReviewer ?? null,
+          serviceTier: message.params.serviceTier ?? null
+        };
         saveState(state);
-        send({ id: message.id, result: { thread: buildThread(thread), model: message.params.model || "gpt-6.1-sol", modelProvider: "openai", serviceTier: message.params.serviceTier ?? null, cwd: thread.cwd, approvalPolicy: "never", sandbox: { type: "readOnly", access: { type: "fullAccess" }, networkAccess: false }, reasoningEffort: null } });
+        send({ id: message.id, result: { thread: buildThread(thread), model: message.params.model || "gpt-6.1-sol", modelProvider: "openai", serviceTier: message.params.serviceTier ?? null, cwd: thread.cwd, approvalPolicy: message.params.approvalPolicy ?? "never", sandbox: { type: "readOnly", access: { type: "fullAccess" }, networkAccess: false }, reasoningEffort: null } });
         break;
       }
 

@@ -4,9 +4,10 @@
 
 - Added `/codex:usage` to read the plan, rate limits, reset credits, and lifetime token usage from the Codex app server.
 - Added `/codex:image` to generate images through Codex's built-in image tool and save them into the workspace.
-- Added `--approval <never|on-request|untrusted|auto>`. `auto` maps to `approvalPolicy: "on-request"` plus `approvalsReviewer: "auto_review"`, so Codex reviews its own approval requests instead of prompting.
+- Added `--approval <never|auto>`. `auto` maps to `approvalPolicy: "on-request"` plus `approvalsReviewer: "auto_review"`, so Codex reviews its own approval requests instead of prompting. `on-request` and `untrusted` are rejected because the plugin has no interactive approval channel yet.
 - `/codex:rescue` now calls the companion script directly instead of routing through the `Agent` tool and the `codex:codex-rescue` subagent. This removes one model turn and one subagent session per rescue run, which matters most in the desktop app.
 - The companion script now resolves implicit resume itself, so a follow-up prompt continues the latest thread without an `AskUserQuestion` round trip.
+- `/codex:rescue` defaults implementation requests to a write-capable run and keeps review, investigation, and diagnosis read-only. `--write` and `--read-only` force either mode.
 - `/codex:review` and `/codex:adversarial-review` accept `--effort`.
 
 ## 1.0.7

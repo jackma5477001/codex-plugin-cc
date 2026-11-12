@@ -1,6 +1,6 @@
 ---
 description: Delegate investigation, an explicit fix request, or follow-up rescue work to Codex
-argument-hint: "[--background|--wait] [--resume|--fresh] [--model <model|sol|terra|luna|astra|spark>] [--effort <none|minimal|low|medium|high|xhigh|max|ultra>] [--fast] [--approval <never|on-request|untrusted|auto>] [what Codex should investigate, solve, or continue]"
+argument-hint: "[--background|--wait] [--resume|--fresh] [--write|--read-only] [--model <model|sol|terra|luna|astra|spark>] [--effort <none|minimal|low|medium|high|xhigh|max|ultra>] [--fast] [--approval <never|auto>] [what Codex should investigate, solve, or continue]"
 allowed-tools: Bash(node:*)
 ---
 
@@ -44,6 +44,11 @@ previous task exists.
 - Preserve the user's raw arguments exactly. Do not strip, reorder, or rewrite flags.
 - `--model`, `--effort`, `--fast`, and `--approval` are runtime-selection flags. Pass them through
   unchanged and never treat them as part of the natural-language task text.
+- `--wait` is a Claude-side execution flag. Strip it before calling the script: the script's own
+  parser treats unknown flags as task text.
+- The script picks the write mode itself: implementation requests run write-capable, while review,
+  investigation, and diagnosis requests stay read-only. Pass through `--write` or `--read-only`
+  only when the user asked for them explicitly.
 - Model aliases: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`,
   `astra` → `gpt-6-astra`, legacy `spark` → `gpt-6-luna`.
 - Leave `--effort`, `--model`, `--fast`, and `--approval` unset unless the user asked for them.

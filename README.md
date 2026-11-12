@@ -146,7 +146,7 @@ Use it when you want Codex to:
 > Depending on the task and the model you choose these tasks might take a long time and it's generally recommended to force the task to be in the background.
 
 It supports `--background`, `--wait`, `--resume`, and `--fresh`. If you omit `--resume` and `--fresh`, the companion script continues the latest rescue thread on its own when the request reads like a follow-up ("continue", "keep going", "apply the top fix", "dig deeper"), and starts a new thread otherwise.
-It also accepts `--model <model|alias>`, `--effort <level>`, `--fast`, and `--approval <never|on-request|untrusted|auto>`.
+It also accepts `--model <model|alias>`, `--effort <level>`, `--fast`, and `--approval <never|auto>`.
 
 Examples:
 
@@ -189,12 +189,14 @@ Every write-capable Codex command (`/codex:rescue`, `/codex:image`) accepts `--a
 
 | Mode | Behavior |
 | --- | --- |
-| `never` | Never ask. Codex runs unattended inside its sandbox (default for read-only work). |
-| `on-request` | Codex decides when a command needs approval and prompts for it. |
-| `untrusted` | Only trusted commands run without approval. |
+| `never` | Never ask. Codex runs unattended inside its sandbox (default). |
 | `auto` | **Codex's "approve for me" mode.** Approval requests are routed to a risk-reviewing subagent instead of interrupting you. |
 
 `--approval auto` maps to `approvalPolicy: "on-request"` plus `approvalsReviewer: "auto_review"`, which is the same mechanism Codex uses for its own `--approve-for-me` flag. `/codex:image` uses `auto` by default so image generation does not stop for a prompt.
+
+Codex also has interactive `on-request` and `untrusted` modes, but this plugin does not expose them yet: they need a server-initiated approval channel that neither the direct app-server client nor the broker implements, so every risky action would fail with `-32601` instead of prompting. Passing either one is rejected with an explicit error.
+
+`/codex:rescue` defaults to a write-capable run for implementation requests and stays read-only for review, investigation, and diagnosis requests. Pass `--read-only` to force read-only, or `--write` to force writes.
 
 ### `/codex:transfer`
 

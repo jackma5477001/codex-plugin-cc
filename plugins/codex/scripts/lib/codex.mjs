@@ -97,16 +97,17 @@ function buildThreadParams(cwd, options = {}) {
 
 /** @returns {ThreadResumeParams} */
 function buildResumeParams(threadId, cwd, options = {}) {
-  return withServiceTier(
-    {
-      threadId,
-      cwd,
-      model: options.model ?? null,
-      approvalPolicy: options.approvalPolicy ?? "never",
-      sandbox: options.sandbox ?? "read-only"
-    },
-    options.serviceTier
-  );
+  const params = {
+    threadId,
+    cwd,
+    model: options.model ?? null,
+    approvalPolicy: options.approvalPolicy ?? "never",
+    sandbox: options.sandbox ?? "read-only"
+  };
+  if (options.approvalsReviewer) {
+    params.approvalsReviewer = options.approvalsReviewer;
+  }
+  return withServiceTier(params, options.serviceTier);
 }
 
 /** @returns {TurnStartParams} */

@@ -1,6 +1,6 @@
 ---
 description: Generate an image through Codex and save it into the workspace
-argument-hint: '[--background] [--model <model|alias>] [--fast] [--approval <never|on-request|untrusted|auto>] <image description>'
+argument-hint: '[--background] [--model <model|alias>] [--fast] [--approval <never|auto>] <image description>'
 disable-model-invocation: true
 allowed-tools: Bash(node:*), AskUserQuestion
 ---

@@ -87,7 +87,13 @@ const VALID_SERVICE_TIERS = new Set([FAST_SERVICE_TIER, "default"]);
 const FAST_MODE_ALIASES = new Set([FAST_SERVICE_TIER, "fast", "true", "1"]);
 // Codex approval modes. `auto` routes approval requests through Codex's own
 // risk-reviewing subagent instead of prompting the user.
-const VALID_APPROVAL_MODES = new Set(["never", "on-request", "untrusted", "auto"]);
+//
+// `on-request` and `untrusted` are intentionally not offered: they need an
+// interactive approval channel, and neither the direct app-server client nor
+// the broker implements the server-initiated approval requests yet. Offering
+// them would only turn every risky action into a -32601 failure.
+const VALID_APPROVAL_MODES = new Set(["never", "auto"]);
+const UNSUPPORTED_APPROVAL_MODES = new Set(["on-request", "untrusted"]);
 const STOP_REVIEW_TASK_MARKER = "Run a stop-gate review of the previous Claude turn.";
 
 function printUsage() {
@@ -97,7 +103,7 @@ function printUsage() {
       "  node scripts/codex-companion.mjs setup [--enable-review-gate|--disable-review-gate] [--json]",
       "  node scripts/codex-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model|alias>] [--effort <level>] [--fast]",
       "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model|alias>] [--effort <level>] [--fast] [focus text]",
-      "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|alias>] [--effort <level>] [--fast] [--approval <never|on-request|untrusted|auto>] [prompt]",
+      "  node scripts/codex-companion.mjs task [--background] [--write|--read-only] [--resume-last|--resume|--fresh] [--model <model|alias>] [--effort <level>] [--fast] [--approval <never|auto>] [prompt]",
       "  node scripts/codex-companion.mjs usage [--json] [--no-usage]",
       "  node scripts/codex-companion.mjs image [--background] [--model <model|alias>] [--fast] [--approval <mode>] <description>",
       "  node scripts/codex-companion.mjs transfer [--source <claude-jsonl>] [--json]",
@@ -172,17 +178,44 @@ function resolveApprovalMode(mode) {
   if (!normalized) {
     return { approvalPolicy: null, approvalsReviewer: null };
   }
-  if (!VALID_APPROVAL_MODES.has(normalized)) {
+  if (UNSUPPORTED_APPROVAL_MODES.has(normalized)) {
     throw new Error(
-      `Unsupported approval mode "${mode}". Use one of: never, on-request, untrusted, auto.`
+      `Approval mode "${mode}" is not supported yet: it needs an interactive approval channel that this plugin does not implement. Use --approval auto to let Codex review its own approval requests.`
     );
+  }
+  if (!VALID_APPROVAL_MODES.has(normalized)) {
+    throw new Error(`Unsupported approval mode "${mode}". Use one of: never, auto.`);
   }
   if (normalized === "auto") {
     // Codex's "approve for me" mode: workspace-write plus a risk-reviewing
     // subagent that decides on approval requests instead of asking the user.
     return { approvalPolicy: "on-request", approvalsReviewer: "auto_review" };
   }
-  return { approvalPolicy: normalized, approvalsReviewer: null };
+  return { approvalPolicy: "never", approvalsReviewer: null };
+}
+
+/**
+ * Rescue used to run through the `codex:codex-rescue` subagent, which added
+ * `--write` for implementation work by default. Now that the command calls the
+ * script directly, that default has to live here, otherwise an ordinary
+ * "fix this" request silently runs read-only.
+ */
+const READ_ONLY_INTENT_PATTERN =
+  /\b(review|investigate|diagnose|diagnosis|analy[sz]e|research|explain|summari[sz]e|look into|why (is|does|did)|read[- ]only|do not (change|edit|modify)|without (changing|editing|modifying))\b/i;
+
+function resolveTaskWriteMode(options, prompt) {
+  if (options["read-only"]) {
+    return false;
+  }
+  if (options.write) {
+    return true;
+  }
+  if (!prompt || looksLikeFollowUpPrompt(prompt)) {
+    // A bare "continue" inherits the thread's previous behavior; do not
+    // silently escalate a resumed read-only investigation into a write run.
+    return false;
+  }
+  return !READ_ONLY_INTENT_PATTERN.test(String(prompt));
 }
 
 function normalizeArgv(argv) {
@@ -848,7 +881,7 @@ async function handleReview(argv) {
 async function handleTask(argv) {
   const { options, positionals } = parseCommandInput(argv, {
     valueOptions: ["model", "effort", "cwd", "prompt-file", "speed", "approval"],
-    booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background", "fast"],
+    booleanOptions: ["json", "write", "read-only", "resume-last", "resume", "fresh", "background", "fast", "wait"],
     aliasMap: {
       m: "model"
     }
@@ -866,8 +899,8 @@ async function handleTask(argv) {
   if (resumeLast && fresh) {
     throw new Error("Choose either --resume/--resume-last or --fresh.");
   }
-  const write = Boolean(options.write);
   const prompt = readTaskPrompt(cwd, options, positionals);
+  const write = resolveTaskWriteMode(options, prompt);
 
   // Implicit resume keeps the fast path free of an AskUserQuestion round trip:
   // an explicit follow-up phrasing continues the latest thread on its own.

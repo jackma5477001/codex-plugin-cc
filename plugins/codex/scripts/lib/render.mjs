@@ -471,6 +471,19 @@ function formatTokenCount(value) {
   return Number(value).toLocaleString("en-US");
 }
 
+function formatWindowDuration(mins) {
+  if (!Number.isFinite(mins) || mins <= 0) {
+    return null;
+  }
+  if (mins % 1440 === 0) {
+    return `${mins / 1440}d`;
+  }
+  if (mins % 60 === 0) {
+    return `${mins / 60}h`;
+  }
+  return `${Math.round(mins)}m`;
+}
+
 function formatWindow(window) {
   if (!window) {
     return "not reported";
@@ -478,9 +491,8 @@ function formatWindow(window) {
   const used = Number.isFinite(window.usedPercent) ? `${window.usedPercent}% used` : "usage unknown";
   const remaining =
     Number.isFinite(window.remainingPercent) ? `${window.remainingPercent}% remaining` : null;
-  const duration = Number.isFinite(window.windowDurationMins)
-    ? `over ${Math.round(window.windowDurationMins / 60 / 24)}d window`
-    : null;
+  const durationLabel = formatWindowDuration(window.windowDurationMins);
+  const duration = durationLabel ? `over ${durationLabel} window` : null;
   const reset = window.resetsAtIso ? `resets ${window.resetsAtIso}` : null;
   return [used, remaining, duration, reset].filter(Boolean).join(", ");
 }

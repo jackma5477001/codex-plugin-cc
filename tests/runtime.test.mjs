@@ -973,6 +973,22 @@ test("task rejects an unsupported approval mode", () => {
   assert.match(result.stderr, /Unsupported approval mode "yolo"/);
 });
 
+test("task rejects interactive approval modes the plugin cannot service", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  for (const mode of ["on-request", "untrusted"]) {
+    const result = run("node", [SCRIPT, "task", "--approval", mode, "investigate"], {
+      cwd: repo,
+      env: buildEnv(binDir)
+    });
+    assert.notEqual(result.status, 0, mode);
+    assert.match(result.stderr, /needs an interactive approval channel/i);
+  }
+});
+
 test("task --approval auto routes approvals through the auto reviewer", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
@@ -992,11 +1008,13 @@ test("task --approval auto routes approvals through the auto reviewer", () => {
 });
 
 test("usage reports normalized quota data", () => {
+  const repo = makeTempDir();
   const binDir = makeTempDir();
+  initGitRepo(repo);
   installFakeCodex(binDir);
 
   const result = run("node", [SCRIPT, "usage", "--json"], {
-    cwd: ROOT,
+    cwd: repo,
     env: buildEnv(binDir)
   });
 
@@ -1010,11 +1028,13 @@ test("usage reports normalized quota data", () => {
 });
 
 test("usage renders a human-readable report", () => {
+  const repo = makeTempDir();
   const binDir = makeTempDir();
+  initGitRepo(repo);
   installFakeCodex(binDir);
 
   const result = run("node", [SCRIPT, "usage"], {
-    cwd: ROOT,
+    cwd: repo,
     env: buildEnv(binDir)
   });
 
@@ -1042,6 +1062,92 @@ test("image queues a write-capable task with auto approval", () => {
   assert.match(fakeState.lastTurnStart.prompt, /a blue paper boat/);
   assert.equal(fakeState.lastThreadStart.approvalsReviewer, "auto_review");
   assert.equal(fakeState.lastThreadStart.sandbox, "workspace-write");
+});
+
+test("task defaults implementation requests to write-capable and keeps investigation read-only", () => {
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+
+  const writeCase = makeTempDir();
+  initGitRepo(writeCase);
+  assert.equal(
+    run("node", [SCRIPT, "task", "fix the failing test with the smallest safe patch"], {
+      cwd: writeCase,
+      env: buildEnv(binDir)
+    }).status,
+    0
+  );
+  const writeState = JSON.parse(fs.readFileSync(path.join(binDir, "fake-codex-state.json"), "utf8"));
+  assert.equal(writeState.lastThreadStart.sandbox, "workspace-write");
+
+  const readCase = makeTempDir();
+  initGitRepo(readCase);
+  assert.equal(
+    run("node", [SCRIPT, "task", "investigate why the tests are failing"], {
+      cwd: readCase,
+      env: buildEnv(binDir)
+    }).status,
+    0
+  );
+  const readState = JSON.parse(fs.readFileSync(path.join(binDir, "fake-codex-state.json"), "utf8"));
+  assert.equal(readState.lastThreadStart.sandbox, "read-only");
+});
+
+test("task --read-only overrides the write default", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  const result = run("node", [SCRIPT, "task", "--read-only", "fix the failing test"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastThreadStart.sandbox, "read-only");
+});
+
+test("task --wait is consumed and does not leak into the prompt", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  const result = run("node", [SCRIPT, "task", "--wait", "diagnose the flaky test"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastTurnStart.prompt, "diagnose the flaky test");
+});
+
+test("resume carries the auto approval reviewer", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  assert.equal(
+    run("node", [SCRIPT, "task", "investigate the flaky test"], { cwd: repo, env: buildEnv(binDir) }).status,
+    0
+  );
+  assert.equal(
+    run("node", [SCRIPT, "task", "--resume", "--approval", "auto", "continue"], {
+      cwd: repo,
+      env: buildEnv(binDir)
+    }).status,
+    0
+  );
+
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastResumeStart.approvalsReviewer, "auto_review");
 });
 
 test("task rejects an unsupported speed mode", () => {
