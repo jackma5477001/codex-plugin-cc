@@ -90,8 +90,8 @@ function printUsage() {
     [
       "Usage:",
       "  node scripts/codex-companion.mjs setup [--enable-review-gate|--disable-review-gate] [--json]",
-      "  node scripts/codex-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model|alias>] [--fast]",
-      "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model|alias>] [--fast] [focus text]",
+      "  node scripts/codex-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model|alias>] [--effort <level>] [--fast]",
+      "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [--model <model|alias>] [--effort <level>] [--fast] [focus text]",
       "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|alias>] [--effort <none|minimal|low|medium|high|xhigh|max|ultra>] [--fast] [prompt]",
       "  node scripts/codex-companion.mjs transfer [--source <claude-jsonl>] [--json]",
       "  node scripts/codex-companion.mjs status [job-id] [--all] [--json]",
@@ -400,6 +400,7 @@ async function executeReviewRun(request) {
     const result = await runAppServerReview(request.cwd, {
       target: reviewTarget,
       model: request.model,
+      effort: request.effort,
       serviceTier: request.serviceTier,
       onProgress: request.onProgress
     });
@@ -442,6 +443,7 @@ async function executeReviewRun(request) {
   const result = await runAppServerTurn(context.repoRoot, {
     prompt,
     model: request.model,
+    effort: request.effort,
     serviceTier: request.serviceTier,
     sandbox: "read-only",
     outputSchema: readOutputSchema(REVIEW_SCHEMA),
@@ -745,7 +747,7 @@ function enqueueBackgroundTask(cwd, job, request) {
 
 async function handleReviewCommand(argv, config) {
   const { options, positionals } = parseCommandInput(argv, {
-    valueOptions: ["base", "scope", "model", "cwd", "speed"],
+    valueOptions: ["base", "scope", "model", "cwd", "speed", "effort"],
     booleanOptions: ["json", "background", "wait", "fast"],
     aliasMap: {
       m: "model"
@@ -760,6 +762,7 @@ async function handleReviewCommand(argv, config) {
     scope: options.scope
   });
   const model = normalizeRequestedModel(options.model);
+  const effort = normalizeReasoningEffort(options.effort);
   const serviceTier = normalizeServiceTier(options.fast ? FAST_SERVICE_TIER : options.speed);
 
   config.validateRequest?.(target, focusText);
@@ -780,6 +783,7 @@ async function handleReviewCommand(argv, config) {
         base: options.base,
         scope: options.scope,
         model,
+        effort,
         serviceTier,
         focusText,
         reviewName: config.reviewName,

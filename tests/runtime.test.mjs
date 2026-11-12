@@ -868,6 +868,51 @@ test("review --fast forwards the priority service tier without changing the revi
   assert.equal(fakeState.lastThreadStart.serviceTier, "priority");
 });
 
+test("review forwards --model and --effort to the review thread", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "review", "--wait", "--model", "astra", "--effort", "high", "--fast"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastThreadStart.model, "gpt-6-astra");
+  assert.equal(fakeState.lastThreadStart.reasoningEffort, "high");
+  assert.equal(fakeState.lastThreadStart.serviceTier, "priority");
+});
+
+test("adversarial review forwards --model, --effort, and --fast", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run(
+    "node",
+    [SCRIPT, "adversarial-review", "--wait", "--model", "astra", "--effort", "high", "--fast", "question the retry design"],
+    { cwd: repo, env: buildEnv(binDir) }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastTurnStart.model, "gpt-6-astra");
+  assert.equal(fakeState.lastTurnStart.effort, "high");
+  assert.equal(fakeState.lastTurnStart.serviceTier, "priority");
+});
+
 test("task rejects an unsupported speed mode", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();

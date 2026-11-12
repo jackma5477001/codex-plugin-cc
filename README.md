@@ -88,7 +88,7 @@ Use it when you want:
 
 Use `--base <ref>` for branch review. It also supports `--wait` and `--background`. It is not steerable and does not take custom focus text. Use [`/codex:adversarial-review`](#codexadversarial-review) when you want to challenge a specific decision or risk area.
 
-It accepts `--model <model|alias>` and `--fast` to pick the Codex model and speed tier. See [Model and speed selection](#model-and-speed-selection).
+It accepts `--model <model|alias>`, `--effort <level>`, and `--fast` to pick the Codex model, reasoning level, and speed tier. See [Model and speed selection](#model-and-speed-selection).
 
 Examples:
 
@@ -96,7 +96,7 @@ Examples:
 /codex:review
 /codex:review --base main
 /codex:review --background
-/codex:review --model sol --fast
+/codex:review --model astra --effort high --fast
 ```
 
 This command is read-only and will not perform any changes. When run in the background you can use [`/codex:status`](#codexstatus) to check on the progress and [`/codex:cancel`](#codexcancel) to cancel the ongoing task.
@@ -109,7 +109,7 @@ It can be used to pressure-test assumptions, tradeoffs, failure modes, and wheth
 
 It uses the same review target selection as `/codex:review`, including `--base <ref>` for branch review.
 It also supports `--wait` and `--background`. Unlike `/codex:review`, it can take extra focus text after the flags.
-It accepts the same `--model <model|alias>` and `--fast` flags as `/codex:review`.
+It accepts the same `--model <model|alias>`, `--effort <level>`, and `--fast` flags as `/codex:review`.
 
 Use it when you want:
 
@@ -173,6 +173,7 @@ Ask Codex to redesign the database connection to be more resilient.
 Every Codex command (`/codex:review`, `/codex:adversarial-review`, `/codex:rescue`) accepts:
 
 - `--model <model|alias>` — pick the Codex model. Concrete ids pass through unchanged; the aliases above are resolved by the plugin.
+- `--effort <level>` — set the model's reasoning level.
 - `--fast` — run on Codex's fast speed tier (`serviceTier: "priority"`, roughly 2x speed with higher usage). It is off unless you ask for it.
 - `--speed <fast|default>` — explicit form of `--fast`.
 

@@ -75,17 +75,21 @@ function withServiceTier(params, serviceTier) {
 
 /** @returns {ThreadStartParams} */
 function buildThreadParams(cwd, options = {}) {
-  return withServiceTier(
-    {
-      cwd,
-      model: options.model ?? null,
-      approvalPolicy: options.approvalPolicy ?? "never",
-      sandbox: options.sandbox ?? "read-only",
-      serviceName: SERVICE_NAME,
-      ephemeral: options.ephemeral ?? true
-    },
-    options.serviceTier
-  );
+  const params = {
+    cwd,
+    model: options.model ?? null,
+    approvalPolicy: options.approvalPolicy ?? "never",
+    sandbox: options.sandbox ?? "read-only",
+    serviceName: SERVICE_NAME,
+    ephemeral: options.ephemeral ?? true
+  };
+  if (options.effort) {
+    // `review/start` has no per-turn effort field, so the reasoning level has
+    // to be set on the thread. Passing it through `config` keeps the user's
+    // other config.toml values intact instead of replacing them.
+    params.config = { model_reasoning_effort: options.effort };
+  }
+  return withServiceTier(params, options.serviceTier);
 }
 
 /** @returns {ThreadResumeParams} */
@@ -1043,6 +1047,7 @@ export async function runAppServerReview(cwd, options = {}) {
     emitProgress(options.onProgress, "Starting Codex review thread.", "starting");
     const thread = await startThread(client, cwd, {
       model: options.model,
+      effort: options.effort,
       serviceTier: options.serviceTier,
       sandbox: "read-only",
       ephemeral: true,

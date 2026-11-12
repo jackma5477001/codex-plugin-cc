@@ -317,7 +317,8 @@ rl.on("line", (line) => {
           threadId: thread.id,
           model: message.params.model ?? null,
           serviceTier: message.params.serviceTier ?? null,
-          serviceTierProvided: Object.prototype.hasOwnProperty.call(message.params, "serviceTier")
+          serviceTierProvided: Object.prototype.hasOwnProperty.call(message.params, "serviceTier"),
+          reasoningEffort: message.params.config?.model_reasoning_effort ?? null
         };
         saveState(state);
         send({ id: message.id, result: { thread: buildThread(thread), model: message.params.model || "gpt-6.1-sol", modelProvider: "openai", serviceTier: message.params.serviceTier ?? null, cwd: thread.cwd, approvalPolicy: "never", sandbox: { type: "readOnly", access: { type: "fullAccess" }, networkAccess: false }, reasoningEffort: null } });
