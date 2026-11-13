@@ -210,6 +210,14 @@ const EDIT_INTENT_PATTERN =
 const READ_ONLY_INTENT_PATTERN =
   /\b(review|investigate|diagnose|diagnosis|analy[sz]e|research|explain|summari[sz]e|look into|why (is|does|did)|read[- ]only|do not (change|edit|modify|touch)|don't (change|edit|modify|touch)|without (changing|editing|modifying|making)|no changes?|no edits?)\b/i;
 
+/**
+ * Negated instructions must short-circuit every write decision. "do not apply
+ * the top fix yet" mentions a fix, and "don't make any changes" is hard to
+ * cover with a fixed phrase list, so this matches any negated edit verb.
+ */
+const NEGATED_EDIT_PATTERN =
+  /\b(?:do not|don't|dont|must not|should not|shouldn't|never|no need to)\s+(?:yet\s+)?(?:apply|make|perform|run|start|change|edit|modify|touch|write|add|remove|delete|rename|refactor|fix|update|migrate|rewrite|patch)\b|\bavoid\s+(?:applying|making|performing|running|starting|changing|editing|modifying|touching|writing|adding|removing|deleting|renaming|refactoring|fixing|updating|migrating|rewriting|patching)\b|\bwithout\s+(?:applying|making|performing|running|starting|changing|editing|modifying|touching|writing|adding|removing|deleting|renaming|refactoring|fixing|updating|migrating|rewriting|patching)\b/i;
+
 function resolveTaskWriteMode(options, prompt, context = {}) {
   // Explicit flags always win.
   if (options["read-only"]) {
@@ -224,10 +232,9 @@ function resolveTaskWriteMode(options, prompt, context = {}) {
     return false;
   }
 
-  // A natural-language read-only request outranks both the edit signal and
-  // permission inheritance, so "continue, but do not change any files" and
-  // "explain how to apply the fix" never become write runs.
-  if (READ_ONLY_INTENT_PATTERN.test(text)) {
+  // A negated edit instruction is the strongest signal: it explicitly rules
+  // out changes, so it must win over both edit detection and inheritance.
+  if (NEGATED_EDIT_PATTERN.test(text) || READ_ONLY_INTENT_PATTERN.test(text)) {
     return false;
   }
 
@@ -898,6 +905,24 @@ async function handleReviewCommand(argv, config) {
     jobClass: "review",
     summary: metadata.summary
   });
+
+  if (options.background) {
+    ensureCodexAvailable(cwd);
+    const request = {
+      cwd,
+      base: options.base ?? null,
+      scope: options.scope ?? null,
+      model,
+      effort,
+      serviceTier,
+      focusText,
+      reviewName: config.reviewName
+    };
+    const { payload } = enqueueBackgroundReview(cwd, job, request);
+    outputCommandResult(payload, renderQueuedTaskLaunch(payload), options.json);
+    return;
+  }
+
   await runForegroundCommand(
     job,
     (progress) =>
@@ -1106,6 +1131,83 @@ async function handleImage(argv) {
         onProgress: progress
       }),
     { json: options.json }
+  );
+}
+
+function enqueueBackgroundReview(cwd, job, request) {
+  const { logFile } = createTrackedProgress(job);
+  appendLogLine(logFile, "Queued for background execution.");
+
+  const child = spawnDetachedReviewWorker(cwd, job.id);
+  const queuedRecord = {
+    ...job,
+    status: "queued",
+    phase: "queued",
+    pid: child.pid ?? null,
+    logFile,
+    request
+  };
+  writeJobFile(job.workspaceRoot, job.id, queuedRecord);
+  upsertJob(job.workspaceRoot, queuedRecord);
+
+  return {
+    payload: {
+      jobId: job.id,
+      status: "queued",
+      title: job.title,
+      summary: job.summary,
+      logFile
+    },
+    logFile
+  };
+}
+
+function spawnDetachedReviewWorker(cwd, jobId) {
+  const scriptPath = path.join(ROOT_DIR, "scripts", "codex-companion.mjs");
+  const child = spawn(process.execPath, [scriptPath, "review-worker", "--cwd", cwd, "--job-id", jobId], {
+    cwd,
+    env: process.env,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true
+  });
+  child.unref();
+  return child;
+}
+
+async function handleReviewWorker(argv) {
+  const { options } = parseCommandInput(argv, {
+    valueOptions: ["cwd", "job-id"]
+  });
+
+  if (!options["job-id"]) {
+    throw new Error("Missing required --job-id for review-worker.");
+  }
+
+  const cwd = resolveCommandCwd(options);
+  const workspaceRoot = resolveCommandWorkspace(options);
+  const storedJob = readStoredJob(workspaceRoot, options["job-id"]);
+  if (!storedJob) {
+    throw new Error(`No stored job found for ${options["job-id"]}.`);
+  }
+
+  const request = storedJob.request;
+  if (!request || typeof request !== "object") {
+    throw new Error(`Stored job ${options["job-id"]} is missing its review request payload.`);
+  }
+
+  const { logFile, progress } = createTrackedProgress(
+    { ...storedJob, workspaceRoot },
+    { logFile: storedJob.logFile ?? null }
+  );
+  await runTrackedJob(
+    { ...storedJob, workspaceRoot, logFile },
+    () =>
+      executeReviewRun({
+        ...request,
+        onProgress: progress
+      }),
+    { logFile }
   );
 }
 
@@ -1328,6 +1430,9 @@ async function main() {
       break;
     case "task-worker":
       await handleTaskWorker(argv);
+      break;
+    case "review-worker":
+      await handleReviewWorker(argv);
       break;
     case "status":
       await handleStatus(argv);

@@ -21,8 +21,9 @@ If the raw arguments already contain `--wait` or `--background`, do not ask anyt
 node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" review "$ARGUMENTS"
 ```
 
-The script returns immediately when `--background` is present (it queues a detached worker), so
-the same call works for both modes. Return the command stdout verbatim, exactly as-is.
+`--background` is handled by the script itself: it queues a detached `review-worker` and returns
+the job id immediately, so this single call never blocks. Return the command stdout verbatim,
+exactly as-is.
 
 ## Slow path — no execution mode chosen
 

@@ -1221,6 +1221,54 @@ test("resume carries the auto approval reviewer", () => {
   assert.equal(fakeState.lastResumeStart.approvalsReviewer, "auto_review");
 });
 
+test("review --background queues a detached job and returns immediately", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const started = Date.now();
+  const result = run("node", [SCRIPT, "review", "--background", "--json"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+  const elapsed = Date.now() - started;
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.status, "queued");
+  assert.match(payload.jobId, /^review-/);
+  // The command must return without waiting for the review itself.
+  assert.ok(elapsed < 30000, `review --background took ${elapsed}ms`);
+});
+
+test("negated edit instructions stay read-only", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  // Make the previous task write-capable so inheritance would say "write".
+  assert.equal(
+    run("node", [SCRIPT, "task", "implement the retry helper"], { cwd: repo, env: buildEnv(binDir) }).status,
+    0
+  );
+
+  const result = run("node", [SCRIPT, "task", "do not apply the top fix yet"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  // "do not apply the top fix yet" reads as a follow-up, so it resumes.
+  assert.equal(fakeState.lastResumeStart.sandbox, "read-only");
+});
+
 test("task rejects an unsupported speed mode", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
@@ -1483,7 +1531,7 @@ test("adversarial review rejects staged-only scope to match review target select
   assert.match(result.stderr, /Use one of: auto, working-tree, branch, or pass --base <ref>/i);
 });
 
-test("review accepts --background while still running as a tracked review job", () => {
+test("review accepts --background while still running as a tracked review job", async () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
   installFakeCodex(binDir);
@@ -1500,18 +1548,27 @@ test("review accepts --background while still running as a tracked review job", 
 
   assert.equal(launched.status, 0, launched.stderr);
   const launchPayload = JSON.parse(launched.stdout);
-  assert.equal(launchPayload.review, "Review");
-  assert.match(launchPayload.codex.stdout, /No material issues found/);
+  // --background now queues a detached worker and returns the job id.
+  assert.equal(launchPayload.status, "queued");
+  assert.match(launchPayload.jobId, /^review-/);
 
-  const status = run("node", [SCRIPT, "status"], {
-    cwd: repo,
-    env: buildEnv(binDir)
-  });
+  // Wait for the detached worker to store its result.
+  let payload = null;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const resultCall = run("node", [SCRIPT, "result", launchPayload.jobId, "--json"], {
+      cwd: repo,
+      env: buildEnv(binDir)
+    });
+    if (resultCall.status === 0) {
+      payload = JSON.parse(resultCall.stdout);
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
 
-  assert.equal(status.status, 0, status.stderr);
-  assert.match(status.stdout, /# Codex Status/);
-  assert.match(status.stdout, /Codex Review/);
-  assert.match(status.stdout, /completed/);
+  assert.ok(payload, "background review never finished");
+  assert.equal(payload.job.status, "completed");
+  assert.match(payload.storedJob.rendered, /No material issues found/);
 });
 
 test("status shows phases, hints, and the latest finished job", () => {

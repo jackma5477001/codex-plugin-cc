@@ -21,7 +21,7 @@ test("review command runs the fast path without a model round trip when the mode
   assert.match(source, /review "\$ARGUMENTS"/);
   assert.match(source, /\[--scope auto\|working-tree\|branch\]/);
   assert.match(source, /## Fast path/);
-  assert.match(source, /returns immediately when `--background` is present/i);
+  assert.match(source, /queues a detached `review-worker` and returns[\s\S]{0,40}the job id immediately/i);
   assert.match(source, /Slow path/);
   assert.match(source, /git status --short --untracked-files=all/);
   assert.match(source, /git diff --shortstat/);
@@ -31,7 +31,7 @@ test("review command runs the fast path without a model round trip when the mode
   assert.match(source, /When in doubt, run the review/i);
   assert.match(source, /\(Recommended\)/);
   assert.match(source, /does not support staged-only review, unstaged-only[\s\S]{0,40}review, or extra focus text/i);
-  assert.match(source, /Return the command stdout verbatim, exactly as-is/i);
+  assert.match(source, /Return the command stdout verbatim,[\s\S]{0,20}exactly as-is/i);
 });
 
 test("adversarial review command uses AskUserQuestion and background Bash while staying review-only", () => {
