@@ -1269,8 +1269,38 @@ test("negated edit instructions stay read-only", () => {
   assert.equal(fakeState.lastResumeStart.sandbox, "read-only");
 });
 
-test("partial negations do not downgrade an explicit edit request", () => {
+test("blanket negated edit instructions stay read-only", () => {
   const binDir = makeTempDir();
+
+  const cases = [
+    "do not fix anything yet",
+    "continue, but do not make any further changes",
+    "do not implement anything"
+  ];
+
+  for (const prompt of cases) {
+    const repo = makeTempDir();
+    initGitRepo(repo);
+    installFakeCodex(binDir);
+
+    const first = run("node", [SCRIPT, "task", "implement the retry helper"], {
+      cwd: repo,
+      env: buildEnv(binDir)
+    });
+    assert.equal(first.status, 0, first.stderr);
+
+    const result = run("node", [SCRIPT, "task", prompt], { cwd: repo, env: buildEnv(binDir) });
+    assert.equal(result.status, 0, result.stderr);
+
+    const statePath = path.join(binDir, "fake-codex-state.json");
+    const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    const sandbox = fakeState.lastResumeStart?.sandbox ?? fakeState.lastThreadStart?.sandbox;
+    assert.equal(sandbox, "read-only", prompt);
+    fs.rmSync(statePath, { force: true });
+  }
+});
+
+test("partial negations do not downgrade an explicit edit request", () => {  const binDir = makeTempDir();
 
   const cases = [
     "implement the retry helper, do not run tests",

@@ -217,19 +217,23 @@ const READ_ONLY_INTENT_PATTERN =
  * read-only run.
  */
 const EDIT_NOUNS =
-  "changes?|edits?|modifications?|files?|anything|code|the code|the repo|the repository|the workspace|the working tree|the config|the configuration|the config file|this file|that file|this (?:function|module|class|file)|that (?:function|module|class|file)";
+  "changes?|(?:further|more|additional|other|any)\\s+changes?|edits?|modifications?|files?|anything|code|the code|the repo|the repository|the workspace|the working tree|the config|the configuration|the config file|this file|that file|this (?:function|module|class|file)|that (?:function|module|class|file)";
 
 const NEGATION = "(?:do not|don't|dont|must not|should not|shouldn't|never)";
-const BLANKET_VERBS = "(?:make|perform|change|edit|modify|touch|write)";
+// Any edit verb followed by a blanket object ("anything", "any changes") is a
+// blanket prohibition. "do not run tests" is excluded because "tests" is not a
+// blanket object.
+const ANY_EDIT_VERB =
+  "(?:make|perform|apply|change|edit|modify|touch|write|fix|implement|refactor|rewrite|patch|add|remove|delete|rename|update|migrate)";
 
 const NEGATED_EDIT_PATTERN = new RegExp(
   [
-    // "do not change any files", "don't make any changes", "never touch anything"
-    `${NEGATION}\\s+(?:yet\\s+)?${BLANKET_VERBS}\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`,
+    // "do not fix anything", "don't make any further changes"
+    `${NEGATION}\\s+(?:yet\\s+)?${ANY_EDIT_VERB}\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`,
     // "do not apply the top fix yet"
     `${NEGATION}\\s+(?:yet\\s+)?apply\\s+(?:the|that|this)\\s+(?:top|first|last|fix|change|patch)`,
     // "avoid changing anything", "without making changes"
-    `(?:avoid|without)\\s+(?:making|applying|performing|changing|editing|modifying|touching|writing)\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`
+    `(?:avoid|without)\\s+(?:making|applying|performing|changing|editing|modifying|touching|writing|fixing|implementing)\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`
   ]
     .map((source) => `\\b${source}\\b`)
     .join("|"),
