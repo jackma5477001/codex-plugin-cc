@@ -32,27 +32,31 @@ If the user already passed `--write` or `--read-only`, do not add a second mode 
 
 ## Step 2 — run it
 
-Put the mode flag into the argument string, and **wrap the user's raw text in double quotes** so a
-sentences mention of `--write` or `--read-only` stays prose instead of turning into a flag:
+Build one argument string made of three parts, in this order:
+
+1. the mode flag (`--write` or `--read-only`),
+2. the user's own flags (`--model`, `--effort`, `--fast`, `--approval`, `--background`, …) left
+   exactly as they passed them, outside any quotes,
+3. the natural-language task text **wrapped in double quotes**.
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "--write \"$ARGUMENTS\""
+node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "--write --model sol \"fix the parser\""
 ```
 
-Use `--read-only` in place of `--write` for read-only requests.
+Rules:
 
-Rules for building that command:
-
-- The mode flag goes outside the quotes; the user's text goes inside them.
-- The script only splits a single argument string, so everything must be one quoted argument.
-- If the user's text itself contains a double quote, switch that span to single quotes instead.
-- Do not escape or rewrite the user's text otherwise.
+- Only the prose goes in quotes. Wrapping the whole `$ARGUMENTS` would turn the user's `--model`
+  and `--effort` into task text and silently drop them.
+- Keep the flags in the same order the user wrote them.
+- If the prose itself contains a double quote, switch that span to single quotes.
+- The script only splits a single argument string, so the whole thing is one quoted argument.
+- The mode flag goes first, outside the prose quotes.
 
 When the request contains `--background`, launch it detached instead:
 
 ```typescript
 Bash({
-  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "--write $ARGUMENTS"`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "--write --model sol \"fix the parser\""`,
   description: "Codex rescue",
   run_in_background: true
 })

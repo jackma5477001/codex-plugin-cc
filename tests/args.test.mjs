@@ -54,6 +54,26 @@ test("apostrophes in names and possessives stay literal", () => {
   assert.deepEqual(parse("--write inspect users' files").positionals, ["inspect", "users'", "files"]);
 });
 
+test("non-ASCII names do not lose a trailing read-only flag", () => {
+  const { options, positionals } = parse("--write inspect René's code --read-only");
+  assert.equal(options["read-only"], true);
+  assert.deepEqual(positionals, ["inspect", "René's", "code"]);
+});
+
+test("user flags outside the prose quotes still apply", () => {
+  const { options, positionals } = parse('--write --model sol --effort high --fast "fix the parser"');
+  assert.equal(options.write, true);
+  assert.equal(options.model, "sol");
+  assert.equal(options.effort, "high");
+  assert.equal(options.fast, true);
+  assert.deepEqual(positionals, ["fix the parser"]);
+});
+
+test("backslash escapes work outside quotes", () => {
+  assert.equal(parse(`--cwd /tmp/my${BACKSLASH} repo fix`).options.cwd, "/tmp/my repo");
+  assert.deepEqual(parse(`say ${BACKSLASH}"hi${BACKSLASH}"`).positionals, ["say", '"hi"']);
+});
+
 test("Windows paths and regular expressions survive verbatim", () => {
   const path = `C:${BACKSLASH}repo${BACKSLASH}src${BACKSLASH}parser.js`;
   assert.deepEqual(parse(`--write fix ${path}`).positionals, ["fix", path]);

@@ -163,6 +163,26 @@ function readToken(text, start) {
       continue;
     }
 
+    if (character === "\\") {
+      const next = text[index + 1];
+      if (next === undefined) {
+        token += character;
+        index += 1;
+        continue;
+      }
+      // Outside quotes a backslash escapes a quote, a space, or another
+      // backslash: `/tmp/my\ repo` is one token and `\"hi\"` keeps its quotes.
+      // Any other backslash is a literal path separator (`C:\repo\x.js`).
+      if (next === "\\" || next === "\"" || next === "'" || /\s/.test(next)) {
+        token += next;
+        index += 2;
+        continue;
+      }
+      token += character;
+      index += 1;
+      continue;
+    }
+
     token += character;
     index += 1;
   }
@@ -173,21 +193,20 @@ function readToken(text, start) {
 /**
  * True when the single quote at `index` is an apostrophe, not a delimiter.
  *
- * It is an apostrophe when a word character precedes it (`O'Brien`, `don't`)
- * and, if quoted text follows, there is no partner quote later. A lone leading
- * quote always opens a span instead, so an unclosed quote cannot expose the
- * text inside it to option parsing.
+ * A preceding letter (any script, so `René's` counts) makes it an apostrophe.
+ * With no preceding letter it always opens a span, so an unclosed leading
+ * quote cannot expose the text inside it to option parsing.
  */
 function isApostrophe(text, index) {
   const previous = text[index - 1] ?? "";
-  if (!/[A-Za-z0-9]/.test(previous)) {
+  if (!/[\p{L}\p{N}]/u.test(previous)) {
     return false;
   }
   const next = text[index + 1] ?? "";
-  if (/[A-Za-z0-9]/.test(next)) {
-    return true; // O'Brien, don't
+  if (/[\p{L}\p{N}]/u.test(next)) {
+    return true; // O'Brien, René's, don't
   }
-  // users' / admins' -- possessive at a word end, nothing to pair with.
+  // users' / admins' -- possessive at a word end with nothing to pair with.
   for (let cursor = index + 1; cursor < text.length; cursor += 1) {
     if (text[cursor] === "\\") {
       cursor += 1;
