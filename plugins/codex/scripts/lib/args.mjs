@@ -77,21 +77,40 @@ export function parseArgs(argv, config = {}) {
 const ESCAPABLE = new Set(["\\", "\"", "'"]);
 
 /**
+ * English contractions are the only place an apostrophe appears inside a word
+ * in this input: it's, don't, can't, we're, I've, you'll, she'd, I'm.
+ * A single quote followed by one of these suffixes is literal text; anything
+ * else is a quote delimiter, which is what makes partial splicing such as
+ * `/tmp/'my repo'` work.
+ */
+const CONTRACTION_PATTERN = /^(?:s|t|re|ve|ll|d|m)\b/;
+
+function isApostrophe(characters, index) {
+  const previous = characters[index - 1];
+  if (!previous || !/[A-Za-z0-9]/.test(previous)) {
+    return false;
+  }
+  return CONTRACTION_PATTERN.test(characters.slice(index + 1).join(""));
+}
+
+/**
  * Splits a raw slash-command argument string into tokens.
  *
  * The rules below are driven by real regressions; keep them in sync with
  * tests/args.test.mjs before changing any of them.
  *
  * Backslashes: only consumed when escaping a quote, a space, or another
- * backslash. Treating every backslash as an escape corrupts Windows paths and
- * regular expressions (`fix C:\repo\src\parser.js` -> `fix C:reposrcparser.js`,
- * `\d+` -> `d+`). Everything else is kept verbatim.
+ * backslash, and this applies inside quotes too (so `'don\'t'` keeps its
+ * apostrophe). Treating every backslash as an escape corrupts Windows paths
+ * and regular expressions (`C:\repo\src\x.js` -> `C:reposrcx.js`, `\d+` ->
+ * `d+`), so everything else is kept verbatim.
  *
  * Quotes: a double quote always opens a quoted span, so partial splicing such
  * as `--cwd /tmp/"my repo"` and inline values such as `--model="sol"` work.
- * A single quote only opens one at a token boundary or right after `=`, which
- * keeps apostrophes in `it's` and `don't` literal. Inline `--write="false"`
- * must keep parsing as false; it is a write-permission boundary.
+ * A single quote opens one unless it reads as a contraction apostrophe, which
+ * keeps `it's` / `don't` literal while still splicing `docs/'task prompt.md'`.
+ * Inline `--write="false"` must keep parsing as false; it is a write
+ * permission boundary.
  */
 export function splitRawArgumentString(raw) {
   const tokens = [];
@@ -104,8 +123,7 @@ export function splitRawArgumentString(raw) {
 
     if (character === "\\") {
       const next = characters[index + 1];
-      // Inside single quotes a backslash is literal (POSIX shell behavior).
-      if (quote === "'" || next === undefined) {
+      if (next === undefined) {
         current += character;
         continue;
       }
@@ -127,20 +145,17 @@ export function splitRawArgumentString(raw) {
       continue;
     }
 
-    if (character === "'" || character === "\"") {
-      // Double quotes always open a quoted span, so partial quoting such as
-      // `docs/"task prompt.md"` and `--model="sol"` keep working.
-      //
-      // Single quotes are different: an apostrophe inside a word ("it's",
-      // "don't") must stay literal. So a single quote only opens a quoted
-      // span at a token boundary or right after `=`.
-      const atTokenStart = current === "";
-      const afterEquals = current.endsWith("=");
-      if (character === "\"" || atTokenStart || afterEquals) {
-        quote = character;
+    if (character === "\"") {
+      quote = character;
+      continue;
+    }
+
+    if (character === "'") {
+      if (isApostrophe(characters, index)) {
+        current += character;
         continue;
       }
-      current += character;
+      quote = character;
       continue;
     }
 
