@@ -9,6 +9,10 @@
 - The companion script now resolves implicit resume itself, so a follow-up prompt continues the latest thread without an `AskUserQuestion` round trip.
 - `/codex:rescue` defaults implementation requests to a write-capable run and keeps review, investigation, and diagnosis read-only. `--write` and `--read-only` force either mode.
 - `/codex:review` and `/codex:adversarial-review` accept `--effort`.
+- `/codex:review --background` now really runs detached: the script queues a `review-worker` and returns the job id instead of waiting for the review to finish.
+- `/codex:review` skips the size estimate and confirmation prompt when `--wait` or `--background` is already given, saving a model turn.
+- Write-mode inference for `/codex:rescue` is conservative: only clearly implementation-shaped requests run write-capable. Blanket "do not change anything" phrasing stays read-only, while partial limits such as "do not run tests" or "without adding dependencies" do not downgrade an explicit fix request.
+- Test suite now isolates the environment variables a host Claude Code session injects, so it passes when run from inside an installed plugin session.
 
 ## 1.0.7
 
