@@ -73,24 +73,41 @@ export function parseArgs(argv, config = {}) {
   return { options, positionals };
 }
 
-/** Characters a backslash may escape inside the raw argument string. */
+/** Characters a backslash may escape outside quotes. */
 const ESCAPABLE = new Set(["\\", "\"", "'"]);
 
 /**
- * English contractions are the only place an apostrophe appears inside a word
- * in this input: it's, don't, can't, we're, I've, you'll, she'd, I'm.
- * A single quote followed by one of these suffixes is literal text; anything
- * else is a quote delimiter, which is what makes partial splicing such as
- * `/tmp/'my repo'` work.
+ * True when the single quote at `index` should be read as an apostrophe rather
+ * than as the start of a quoted span.
+ *
+ * Two signals, either is enough:
+ * - it sits between two word characters (`it's`, `don't`, `O'Brien`);
+ * - there is no matching unescaped single quote later, so it cannot be a
+ *   delimiter (`users' files`).
+ *
+ * This is what lets `docs/'task prompt.md'` and `/tmp/'my repo'` splice while
+ * `O'Brien --read-only` keeps its apostrophe and does not swallow the flag.
  */
-const CONTRACTION_PATTERN = /^(?:s|t|re|ve|ll|d|m)\b/;
-
 function isApostrophe(characters, index) {
   const previous = characters[index - 1];
-  if (!previous || !/[A-Za-z0-9]/.test(previous)) {
-    return false;
+  const next = characters[index + 1];
+  if (/[A-Za-z0-9]/.test(previous ?? "") && /[A-Za-z0-9]/.test(next ?? "")) {
+    return true;
   }
-  return CONTRACTION_PATTERN.test(characters.slice(index + 1).join(""));
+  return !hasClosingSingleQuote(characters, index);
+}
+
+function hasClosingSingleQuote(characters, startIndex) {
+  for (let index = startIndex + 1; index < characters.length; index += 1) {
+    if (characters[index] === "\\") {
+      index += 1; // skip the escaped character
+      continue;
+    }
+    if (characters[index] === "'") {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -99,18 +116,20 @@ function isApostrophe(characters, index) {
  * The rules below are driven by real regressions; keep them in sync with
  * tests/args.test.mjs before changing any of them.
  *
- * Backslashes: only consumed when escaping a quote, a space, or another
- * backslash, and this applies inside quotes too (so `'don\'t'` keeps its
- * apostrophe). Treating every backslash as an escape corrupts Windows paths
- * and regular expressions (`C:\repo\src\x.js` -> `C:reposrcx.js`, `\d+` ->
- * `d+`), so everything else is kept verbatim.
+ * Backslashes outside quotes: only consumed when escaping a quote, a space, or
+ * another backslash. Treating every backslash as an escape corrupts Windows
+ * paths and regular expressions (`C:\repo\src\x.js` -> `C:reposrcx.js`,
+ * `\d+` -> `d+`), so everything else is kept verbatim.
  *
- * Quotes: a double quote always opens a quoted span, so partial splicing such
- * as `--cwd /tmp/"my repo"` and inline values such as `--model="sol"` work.
- * A single quote opens one unless it reads as a contraction apostrophe, which
- * keeps `it's` / `don't` literal while still splicing `docs/'task prompt.md'`.
- * Inline `--write="false"` must keep parsing as false; it is a write
- * permission boundary.
+ * Backslashes inside single quotes: only `\'` is special, so it cannot close
+ * the span early. Every other backslash is literal, which keeps a UNC prefix
+ * (`'\\server\share'`) intact.
+ *
+ * Quotes: a double quote always opens a span, so partial splicing such as
+ * `--cwd /tmp/"my repo"` and inline `--model="sol"` work. A single quote opens
+ * one unless it reads as an apostrophe (see isApostrophe). Inline
+ * `--write="false"` must keep parsing as false: it is a write-permission
+ * boundary.
  */
 export function splitRawArgumentString(raw) {
   const tokens = [];
@@ -120,6 +139,37 @@ export function splitRawArgumentString(raw) {
 
   for (let index = 0; index < characters.length; index += 1) {
     const character = characters[index];
+
+    if (quote === "'") {
+      // Only \' is special inside single quotes; \d, \\server etc. stay literal.
+      if (character === "\\" && characters[index + 1] === "'") {
+        current += "'";
+        index += 1;
+        continue;
+      }
+      if (character === "'") {
+        quote = null;
+        continue;
+      }
+      current += character;
+      continue;
+    }
+
+    if (quote === "\"") {
+      // Only \" is special inside double quotes. Backslash is a path character
+      // on Windows, so `"\\server\share"` must keep both leading backslashes.
+      if (character === "\\" && characters[index + 1] === "\"") {
+        current += "\"";
+        index += 1;
+        continue;
+      }
+      if (character === "\"") {
+        quote = null;
+        continue;
+      }
+      current += character;
+      continue;
+    }
 
     if (character === "\\") {
       const next = characters[index + 1];
@@ -133,15 +183,6 @@ export function splitRawArgumentString(raw) {
         continue;
       }
       current += character;
-      continue;
-    }
-
-    if (quote) {
-      if (character === quote) {
-        quote = null;
-      } else {
-        current += character;
-      }
       continue;
     }
 

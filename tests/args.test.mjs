@@ -74,6 +74,21 @@ test("contractions are not treated as quote delimiters", () => {
   assert.deepEqual(splitRawArgumentString("I'm sure we're done"), ["I'm", "sure", "we're", "done"]);
 });
 
+test("an apostrophe in a name does not swallow later flags", () => {
+  const { options, positionals } = parseArgs(splitRawArgumentString("--write inspect O'Brien --read-only"), {
+    booleanOptions: ["write", "read-only"]
+  });
+  // The explicit --read-only must still be seen by the parser.
+  assert.equal(options["read-only"], true);
+  assert.deepEqual(positionals, ["inspect", "O'Brien"]);
+});
+
+test("UNC paths keep both leading backslashes inside either quote style", () => {
+  const unc = `${BACKSLASH}${BACKSLASH}server${BACKSLASH}my repo`;
+  assert.deepEqual(splitRawArgumentString(`--cwd '${unc}' fix`), ["--cwd", unc, "fix"]);
+  assert.deepEqual(splitRawArgumentString(`--cwd "${unc}" fix`), ["--cwd", unc, "fix"]);
+});
+
 test("an inline --write=false must not become a write run", () => {
   const { options } = parseArgs(splitRawArgumentString('--write="false" fix it'), {
     booleanOptions: ["write", "read-only"]
