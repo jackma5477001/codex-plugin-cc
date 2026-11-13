@@ -120,13 +120,15 @@ export function splitRawArgumentString(raw) {
     }
 
     if (character === "'" || character === "\"") {
-      // A quote opens a quoted span at a token boundary or right after `=`,
-      // so `--model="sol"` and `--cwd="/tmp/my repo"` keep working. Anywhere
-      // else it is literal text, which keeps apostrophes in words like
-      // "it's" and "don't" intact instead of swallowing the rest of the input.
+      // Double quotes always open a quoted span, so partial quoting such as
+      // `docs/"task prompt.md"` and `--model="sol"` keep working.
+      //
+      // Single quotes are different: an apostrophe inside a word ("it's",
+      // "don't") must stay literal. So a single quote only opens a quoted
+      // span at a token boundary or right after `=`.
       const atTokenStart = current === "";
       const afterEquals = current.endsWith("=");
-      if (atTokenStart || afterEquals) {
+      if (character === "\"" || atTokenStart || afterEquals) {
         quote = character;
         continue;
       }

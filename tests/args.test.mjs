@@ -38,6 +38,19 @@ test("splitRawArgumentString keeps inline quoted option values intact", () => {
   ]);
 });
 
+test("splitRawArgumentString keeps partially quoted path values intact", () => {
+  assert.deepEqual(splitRawArgumentString('--cwd /tmp/"my repo" fix'), [
+    "--cwd",
+    "/tmp/my repo",
+    "fix"
+  ]);
+  assert.deepEqual(splitRawArgumentString('--prompt-file docs/"task prompt.md" fix'), [
+    "--prompt-file",
+    "docs/task prompt.md",
+    "fix"
+  ]);
+});
+
 test("an inline --write=false must not become a write run", () => {
   const { options } = parseArgs(splitRawArgumentString('--write="false" fix it'), {
     booleanOptions: ["write", "read-only"]
