@@ -196,7 +196,7 @@ Every write-capable Codex command (`/codex:rescue`, `/codex:image`) accepts `--a
 
 Codex also has interactive `on-request` and `untrusted` modes, but this plugin does not expose them yet: they need a server-initiated approval channel that neither the direct app-server client nor the broker implements, so every risky action would fail with `-32601` instead of prompting. Passing either one is rejected with an explicit error.
 
-`/codex:rescue` defaults to a write-capable run for implementation requests and stays read-only for review, investigation, and diagnosis requests. Pass `--read-only` to force read-only, or `--write` to force writes.
+`/codex:rescue` runs read-only by default and only gets write access when the request is handed to Codex as an implementation task. The slash command runs through the model, which reads the request and passes `--write` for fixes and implementation, or `--read-only` for review and investigation. Pass either flag yourself to override. The script never guesses from keywords: a wrong guess would mean an unattended write run under the default `never`-approval policy.
 
 ### `/codex:transfer`
 

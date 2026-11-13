@@ -33,6 +33,7 @@ Forwarding rules:
 - Add `--fast` only when the user explicitly asks for fast/speed mode.
 - Treat `--effort <value>`, `--model <value>`, and `--fast` as runtime controls and do not include them in the task text you pass through.
 - Default to a write-capable Codex run by adding `--write` unless the user explicitly asks for read-only behavior or only wants review, diagnosis, or research without edits.
+- The script itself never infers write mode from the prompt: without `--write` every run is read-only. Deciding the mode here is therefore required for fixes to actually land.
 - Treat `--resume` and `--fresh` as routing controls and do not include them in the task text you pass through, but **do pass `--fresh` through to the `task` command as a flag**. The script resolves implicit resume on its own, so stripping `--fresh` would let a follow-up-style prompt silently resume the old thread.
 - `--resume` means add `--resume-last`.
 - `--fresh` means forward `--fresh` to `task` so the script starts a new thread even when the prompt reads like a follow-up.

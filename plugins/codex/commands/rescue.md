@@ -11,24 +11,38 @@ Raw user request:
 
 `$ARGUMENTS`
 
-## Fast path — no confirmation needed
+## Step 1 — decide the write mode
 
-If the request includes `--background`, or it does not need a resume decision, run it directly:
+Codex runs read-only by default. Add `--write` only when the request asks for a change to the
+code: fixing, implementing, refactoring, adding, updating, or deleting code, config, or docs.
 
-- When the raw request contains `--background`, launch it detached and report the job id:
+Keep it read-only (no flag) for review, investigation, diagnosis, explanation, research, or
+planning, and whenever the user says not to modify anything.
+
+Do not try to encode this from keywords. Judge the request the way a colleague would: a request
+that only restricts one side activity ("do not run tests", "without adding dependencies") still
+wants the code change. A request that names a concrete fix plus an unrelated prohibition
+("fix the parser, do not delete any files") is still a write request. A request that forbids
+changing anything at all ("do not fix anything yet", "just investigate") is read-only.
+
+If the user passed `--write` or `--read-only` explicitly, that wins; do not override it.
+
+## Step 2 — run it
+
+Append the mode flag you chose to the raw arguments and run:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task <mode flag> "$ARGUMENTS"
+```
+
+When the request contains `--background`, launch it detached instead:
 
 ```typescript
 Bash({
-  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "$ARGUMENTS"`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task <mode flag> "$ARGUMENTS"`,
   description: "Codex rescue",
   run_in_background: true
 })
-```
-
-- Otherwise run it in the foreground:
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "$ARGUMENTS"
 ```
 
 Return that command's stdout verbatim, exactly as-is, with no commentary before or after it.
@@ -44,11 +58,7 @@ previous task exists.
 - Preserve the user's raw arguments exactly. Do not strip, reorder, or rewrite flags.
 - `--model`, `--effort`, `--fast`, and `--approval` are runtime-selection flags. Pass them through
   unchanged and never treat them as part of the natural-language task text.
-- `--wait` is a Claude-side execution flag. Strip it before calling the script: the script's own
-  parser treats unknown flags as task text.
-- The script picks the write mode itself: implementation requests run write-capable, while review,
-  investigation, and diagnosis requests stay read-only. Pass through `--write` or `--read-only`
-  only when the user asked for them explicitly.
+- `--wait` is a Claude-side execution flag. Strip it before calling the script.
 - Model aliases: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`,
   `astra` → `gpt-6-astra`, legacy `spark` → `gpt-6-luna`.
 - Leave `--effort`, `--model`, `--fast`, and `--approval` unset unless the user asked for them.

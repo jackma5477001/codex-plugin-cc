@@ -23,6 +23,7 @@ Execution rules:
 - Map the current aliases to their models: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, `astra` → `gpt-6-astra`. The legacy alias `spark` maps to `gpt-6-luna`.
 - Add `--fast` only when the user explicitly asks for Codex fast/speed mode.
 - Default to a write-capable Codex run by adding `--write` unless the user explicitly asks for read-only behavior or only wants review, diagnosis, or research without edits.
+- The script itself never infers write mode from the prompt: without `--write` every run is read-only. Deciding the mode here is therefore required for fixes to actually land.
 
 Command selection:
 - Use exactly one `task` invocation per rescue handoff.

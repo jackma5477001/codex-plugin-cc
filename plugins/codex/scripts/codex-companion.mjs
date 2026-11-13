@@ -195,90 +195,25 @@ function resolveApprovalMode(mode) {
 }
 
 /**
- * Rescue used to run through the `codex:codex-rescue` subagent, which added
- * `--write` for implementation work by default. Now that the command calls the
- * script directly, that default has to live here.
+ * Write mode is chosen by the caller, not guessed from the prompt text.
  *
- * The inference is deliberately asymmetric: a write run is only enabled when
- * the request clearly asks for a change. Anything unrecognized or explicitly
- * read-only stays read-only, because the default approval policy is `never`,
- * so a wrong write guess would edit the working tree unattended.
+ * Earlier revisions tried to infer intent from keywords, and every iteration
+ * produced a new false positive: "do not delete any files" is not a request to
+ * delete, but "fix the parser, do not delete any files" still wants the fix.
+ * Natural language is the wrong layer for a regex, and a wrong guess is a
+ * write-enabled run under `approvalPolicy: never`, which edits the working
+ * tree unattended.
+ *
+ * So the script stays safe by default: read-only unless `--write` is passed.
+ * The slash command already runs through the model, which reads the command
+ * document and decides whether the request is an implementation task -- it
+ * adds `--write` for fixes and `--read-only` for review or investigation.
  */
-const EDIT_INTENT_PATTERN =
-  /\b(fix|fixes|fixing|implement|implementing|patch|refactor|refactoring|add|adding|create|creating|update|updating|rename|renaming|remove|removing|delete|deleting|migrate|migrating|rewrite|rewriting|apply (the|this|that) (fix|change|patch)|make (the|this|that) change|write (the|a) code)\b/i;
-
-const READ_ONLY_INTENT_PATTERN =
-  /\b(review|investigate|diagnose|diagnosis|analy[sz]e|research|explain|summari[sz]e|look into|why (is|does|did)|read[- ]only|do not (change|edit|modify|touch)|don't (change|edit|modify|touch)|without (changing|editing|modifying|making)|no changes?|no edits?)\b/i;
-
-/**
- * Only a blanket prohibition on editing should override an explicit edit
- * request. Two things do NOT count as blanket:
- *
- * - a side activity: "do not run tests", "without adding dependencies"
- * - a single operation on top of allowed work: "fix the parser, do not delete
- *   any files" still wants the fix, so it must stay write-capable.
- *
- * So this only matches general edit verbs ("change", "fix", "implement", ...)
- * paired with a blanket object ("anything", "any changes", "the code", ...).
- * Operation-specific verbs (add / remove / delete / rename) are deliberately
- * absent: they name one restricted operation, not a blanket stop.
- */
-const EDIT_NOUNS =
-  "changes?|(?:further|more|additional|other|any)\\s+changes?|edits?|modifications?|files?|anything|code|the code|the repo|the repository|the workspace|the working tree|the config|the configuration|the config file|this file|that file|this (?:function|module|class|file)|that (?:function|module|class|file)";
-
-const NEGATION = "(?:do not|don't|dont|must not|should not|shouldn't|never)";
-
-// General edit verbs: negating one of these with a blanket object means "stop
-// editing". "run", "add", "delete", "rename" are intentionally excluded.
-const GENERAL_EDIT_VERB =
-  "(?:make|perform|apply|change|edit|modify|touch|write|fix|implement|refactor|rewrite|patch|update|migrate)";
-
-const NEGATED_EDIT_PATTERN = new RegExp(
-  [
-    // "do not fix anything", "don't make any further changes", "never touch the config"
-    `${NEGATION}\\s+(?:yet\\s+)?${GENERAL_EDIT_VERB}\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`,
-    // "do not apply the top fix yet"
-    `${NEGATION}\\s+(?:yet\\s+)?apply\\s+(?:the|that|this)\\s+(?:top|first|last|fix|change|patch)`,
-    // "avoid changing anything", "without making changes"; "without adding
-    // dependencies" is absent on purpose because it is a partial restriction.
-    `(?:avoid|without)\\s+(?:making|applying|performing|changing|editing|modifying|touching|writing|fixing|implementing|refactoring|rewriting|patching|updating|migrating)\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`
-  ]
-    .map((source) => `\\b${source}\\b`)
-    .join("|"),
-  "i"
-);
-
-function resolveTaskWriteMode(options, prompt, context = {}) {
-  // Explicit flags always win.
+function resolveTaskWriteMode(options) {
   if (options["read-only"]) {
     return false;
   }
-  if (options.write) {
-    return true;
-  }
-
-  const text = String(prompt ?? "");
-  if (!text) {
-    return false;
-  }
-
-  // A negated edit instruction is the strongest signal: it explicitly rules
-  // out changes, so it must win over both edit detection and inheritance.
-  if (NEGATED_EDIT_PATTERN.test(text) || READ_ONLY_INTENT_PATTERN.test(text)) {
-    return false;
-  }
-
-  if (looksLikeFollowUpPrompt(text)) {
-    // A follow-up that names a concrete fix is still an edit request.
-    if (followUpRequestsEdit(text)) {
-      return true;
-    }
-    // Otherwise inherit the permission of the thread being continued, so a
-    // write-capable task stays write-capable across "continue".
-    return Boolean(context.previousTaskWrite);
-  }
-
-  return EDIT_INTENT_PATTERN.test(text);
+  return Boolean(options.write);
 }
 
 function normalizeArgv(argv) {
@@ -474,16 +409,9 @@ function findLatestResumableTaskJob(jobs) {
 // `next` is matched only as a standalone instruction (`next` / `next step`),
 // never as the "Next.js" framework or a next.config.js filename.
 const FOLLOW_UP_PATTERN =
-  /^(?:(?:please|now|ok|okay|so|then)[,\s]+)?(?:(?:continue|continuing|keep going|resume|carry on|go on|dig deeper|follow up|follow-up|next step)\b|next[.!]?$)/i;
+  /^(?:(?:please|now|ok|okay|so|then)[,\s]+)?(?:(?:continue|continuing|keep going|resume|carry on|go on|dig deeper|follow up|follow-up|next step|apply the top fix|apply the first fix)\b|next[.!]?$)/i;
 
-const FOLLOW_UP_EDIT_PATTERN = /\bapply (?:the|that|this) (?:top|first|last|fix|change|patch)\b/i;
-
-/**
- * Decides whether a rescue request should continue the previous Codex thread
- * instead of starting a new one. Doing this in the script removes the
- * AskUserQuestion round trip from the hot path, which matters most when the
- * command is driven from the desktop app.
- */
+/** True when a follow-up that reads like a resume should continue the thread. */
 function looksLikeFollowUpPrompt(prompt) {
   const text = String(prompt ?? "").trim();
   if (!text) {
@@ -494,13 +422,9 @@ function looksLikeFollowUpPrompt(prompt) {
   if (text.split(/\s+/).length > 12) {
     return false;
   }
-  return FOLLOW_UP_PATTERN.test(text) || FOLLOW_UP_EDIT_PATTERN.test(text);
+  return FOLLOW_UP_PATTERN.test(text);
 }
 
-/** True when the follow-up explicitly asks for a code change. */
-function followUpRequestsEdit(prompt) {
-  return FOLLOW_UP_EDIT_PATTERN.test(String(prompt ?? ""));
-}
 async function waitForSingleJobSnapshot(cwd, reference, options = {}) {
   const timeoutMs = Math.max(0, Number(options.timeoutMs) || DEFAULT_STATUS_WAIT_TIMEOUT_MS);
   const pollIntervalMs = Math.max(100, Number(options.pollIntervalMs) || DEFAULT_STATUS_POLL_INTERVAL_MS);
@@ -1009,9 +933,13 @@ async function handleTask(argv) {
   );
   const implicitResumeFallback = implicitResume && !resumableJob;
   const effectiveResumeLast = (resumeLast || implicitResume) && !implicitResumeFallback;
-  const write = resolveTaskWriteMode(options, prompt, {
-    previousTaskWrite: effectiveResumeLast ? Boolean(resumableJob?.write) : false
-  });
+  // An unspecified mode follows the thread being continued, so "continue"
+  // after a write-capable run stays write-capable, while a resumed read-only
+  // investigation stays read-only.
+  const write =
+    options["read-only"] || options.write || !effectiveResumeLast
+      ? resolveTaskWriteMode(options)
+      : resolveTaskWriteMode(options) || Boolean(resumableJob?.write);
   const taskMetadata = buildTaskRunMetadata({
     prompt,
     resumeLast: effectiveResumeLast

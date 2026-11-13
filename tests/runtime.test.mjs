@@ -1064,84 +1064,6 @@ test("image queues a write-capable task with auto approval", () => {
   assert.equal(fakeState.lastThreadStart.sandbox, "workspace-write");
 });
 
-test("task defaults implementation requests to write-capable and keeps investigation read-only", () => {
-  const binDir = makeTempDir();
-  installFakeCodex(binDir);
-
-  const writeCase = makeTempDir();
-  initGitRepo(writeCase);
-  assert.equal(
-    run("node", [SCRIPT, "task", "fix the failing test with the smallest safe patch"], {
-      cwd: writeCase,
-      env: buildEnv(binDir)
-    }).status,
-    0
-  );
-  const writeState = JSON.parse(fs.readFileSync(path.join(binDir, "fake-codex-state.json"), "utf8"));
-  assert.equal(writeState.lastThreadStart.sandbox, "workspace-write");
-
-  const readCase = makeTempDir();
-  initGitRepo(readCase);
-  assert.equal(
-    run("node", [SCRIPT, "task", "investigate why the tests are failing"], {
-      cwd: readCase,
-      env: buildEnv(binDir)
-    }).status,
-    0
-  );
-  const readState = JSON.parse(fs.readFileSync(path.join(binDir, "fake-codex-state.json"), "utf8"));
-  assert.equal(readState.lastThreadStart.sandbox, "read-only");
-});
-
-test("task keeps unclear and explicitly read-only requests read-only", () => {
-  const binDir = makeTempDir();
-
-  const cases = [
-    "Find the root cause without making any changes",
-    "do not edit anything, just tell me what is wrong",
-    "summarize the architecture",
-    "what does this module do"
-  ];
-
-  for (const prompt of cases) {
-    const repo = makeTempDir();
-    initGitRepo(repo);
-    installFakeCodex(binDir);
-
-    const result = run("node", [SCRIPT, "task", prompt], { cwd: repo, env: buildEnv(binDir) });
-    assert.equal(result.status, 0, result.stderr);
-
-    const statePath = path.join(binDir, "fake-codex-state.json");
-    const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-    assert.equal(fakeState.lastThreadStart.sandbox, "read-only", prompt);
-    fs.rmSync(statePath, { force: true });
-  }
-});
-
-test("a natural-language read-only request outranks resume inheritance", () => {
-  const repo = makeTempDir();
-  const binDir = makeTempDir();
-  const statePath = path.join(binDir, "fake-codex-state.json");
-  installFakeCodex(binDir);
-  initGitRepo(repo);
-
-  assert.equal(
-    run("node", [SCRIPT, "task", "implement the retry helper"], { cwd: repo, env: buildEnv(binDir) }).status,
-    0
-  );
-  assert.equal(
-    run("node", [SCRIPT, "task", "continue, but do not change any files"], {
-      cwd: repo,
-      env: buildEnv(binDir)
-    }).status,
-    0
-  );
-
-  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-  // The second run resumes the thread, so the sandbox lands on lastResumeStart.
-  assert.equal(fakeState.lastResumeStart.sandbox, "read-only");
-});
-
 test("framework names are not mistaken for resume instructions", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
@@ -1159,9 +1081,8 @@ test("framework names are not mistaken for resume instructions", () => {
 
   const statePath = path.join(binDir, "fake-codex-state.json");
   const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-  // A new thread, and the explicit "fix" keeps it write-capable.
+  // "Next.js: fix the login page" is new work, not a resume instruction.
   assert.equal(fakeState.threads.length, 2);
-  assert.equal(fakeState.lastThreadStart.sandbox, "workspace-write");
 });
 
 test("task --read-only overrides the write default", () => {
@@ -1179,6 +1100,73 @@ test("task --read-only overrides the write default", () => {
   assert.equal(result.status, 0, result.stderr);
   const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
   assert.equal(fakeState.lastThreadStart.sandbox, "read-only");
+});
+
+test("task stays read-only unless --write is passed", () => {
+  const binDir = makeTempDir();
+
+  // Write mode is the caller's decision, not a keyword guess: even a prompt
+  // that clearly asks for a fix must not silently get a write sandbox.
+  const prompts = [
+    "fix the failing test",
+    "implement the retry helper",
+    "do not delete any files",
+    "fix the parser, do not delete any files"
+  ];
+
+  for (const prompt of prompts) {
+    const repo = makeTempDir();
+    initGitRepo(repo);
+    installFakeCodex(binDir);
+
+    const result = run("node", [SCRIPT, "task", prompt], { cwd: repo, env: buildEnv(binDir) });
+    assert.equal(result.status, 0, result.stderr);
+
+    const statePath = path.join(binDir, "fake-codex-state.json");
+    const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    assert.equal(fakeState.lastThreadStart.sandbox, "read-only", prompt);
+    fs.rmSync(statePath, { force: true });
+  }
+});
+
+test("task --write opts into a write-capable run", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  const result = run("node", [SCRIPT, "task", "--write", "fix the failing test"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastThreadStart.sandbox, "workspace-write");
+});
+
+test("an implicit resume inherits the thread's write mode", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  assert.equal(
+    run("node", [SCRIPT, "task", "--write", "implement the retry helper"], {
+      cwd: repo,
+      env: buildEnv(binDir)
+    }).status,
+    0
+  );
+  assert.equal(
+    run("node", [SCRIPT, "task", "continue"], { cwd: repo, env: buildEnv(binDir) }).status,
+    0
+  );
+
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastResumeStart.sandbox, "workspace-write");
 });
 
 test("task --wait is consumed and does not leak into the prompt", () => {
@@ -1243,87 +1231,6 @@ test("review --background queues a detached job and returns immediately", () => 
   assert.match(payload.jobId, /^review-/);
   // The command must return without waiting for the review itself.
   assert.ok(elapsed < 30000, `review --background took ${elapsed}ms`);
-});
-
-test("negated edit instructions stay read-only", () => {
-  const repo = makeTempDir();
-  const binDir = makeTempDir();
-  const statePath = path.join(binDir, "fake-codex-state.json");
-  installFakeCodex(binDir);
-  initGitRepo(repo);
-
-  // Make the previous task write-capable so inheritance would say "write".
-  assert.equal(
-    run("node", [SCRIPT, "task", "implement the retry helper"], { cwd: repo, env: buildEnv(binDir) }).status,
-    0
-  );
-
-  const result = run("node", [SCRIPT, "task", "do not apply the top fix yet"], {
-    cwd: repo,
-    env: buildEnv(binDir)
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-  // "do not apply the top fix yet" reads as a follow-up, so it resumes.
-  assert.equal(fakeState.lastResumeStart.sandbox, "read-only");
-});
-
-test("blanket negated edit instructions stay read-only", () => {
-  const binDir = makeTempDir();
-
-  const cases = [
-    "do not fix anything yet",
-    "continue, but do not make any further changes",
-    "do not implement anything"
-  ];
-
-  for (const prompt of cases) {
-    const repo = makeTempDir();
-    initGitRepo(repo);
-    installFakeCodex(binDir);
-
-    const first = run("node", [SCRIPT, "task", "implement the retry helper"], {
-      cwd: repo,
-      env: buildEnv(binDir)
-    });
-    assert.equal(first.status, 0, first.stderr);
-
-    const result = run("node", [SCRIPT, "task", prompt], { cwd: repo, env: buildEnv(binDir) });
-    assert.equal(result.status, 0, result.stderr);
-
-    const statePath = path.join(binDir, "fake-codex-state.json");
-    const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-    const sandbox = fakeState.lastResumeStart?.sandbox ?? fakeState.lastThreadStart?.sandbox;
-    assert.equal(sandbox, "read-only", prompt);
-    fs.rmSync(statePath, { force: true });
-  }
-});
-
-test("partial negations do not downgrade an explicit edit request", () => {
-  const binDir = makeTempDir();
-
-  const cases = [
-    "implement the retry helper, do not run tests",
-    "fix the parser without adding dependencies",
-    // Operation-specific restrictions still allow the requested edit.
-    "fix the parser, do not delete any files",
-    "implement the helper, do not add files"
-  ];
-
-  for (const prompt of cases) {
-    const repo = makeTempDir();
-    initGitRepo(repo);
-    installFakeCodex(binDir);
-
-    const result = run("node", [SCRIPT, "task", prompt], { cwd: repo, env: buildEnv(binDir) });
-    assert.equal(result.status, 0, result.stderr);
-
-    const statePath = path.join(binDir, "fake-codex-state.json");
-    const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-    assert.equal(fakeState.lastThreadStart.sandbox, "workspace-write", prompt);
-    fs.rmSync(statePath, { force: true });
-  }
 });
 
 test("background review persists the job before spawning its worker", () => {
