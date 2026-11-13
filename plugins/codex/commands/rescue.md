@@ -11,13 +11,16 @@ Raw user request:
 
 `$ARGUMENTS`
 
-## Step 1 — decide the write mode
+## Step 1 — decide the write mode, and always pass it explicitly
 
-Codex runs read-only by default. Add `--write` only when the request asks for a change to the
-code: fixing, implementing, refactoring, adding, updating, or deleting code, config, or docs.
+Codex runs read-only by default, but a resumed thread inherits its previous write mode. So you
+must always pass a mode flag explicitly; never omit it.
 
-Keep it read-only (no flag) for review, investigation, diagnosis, explanation, research, or
-planning, and whenever the user says not to modify anything.
+- Pass `--write` when the request asks for a change to the code: fixing, implementing,
+  refactoring, adding, updating, or deleting code, config, or docs.
+- Pass `--read-only` for review, investigation, diagnosis, explanation, research, or planning, and
+  whenever the user says not to modify anything. This is required even though read-only is the
+  default, because it stops a resumed write-capable thread from silently writing again.
 
 Do not try to encode this from keywords. Judge the request the way a colleague would: a request
 that only restricts one side activity ("do not run tests", "without adding dependencies") still
@@ -25,21 +28,27 @@ wants the code change. A request that names a concrete fix plus an unrelated pro
 ("fix the parser, do not delete any files") is still a write request. A request that forbids
 changing anything at all ("do not fix anything yet", "just investigate") is read-only.
 
-If the user passed `--write` or `--read-only` explicitly, that wins; do not override it.
+If the user already passed `--write` or `--read-only`, do not add a second mode flag.
 
 ## Step 2 — run it
 
-Append the mode flag you chose to the raw arguments and run:
+Put the mode flag into the argument string itself. The script only splits a single argument
+string, so passing the flag as a separate argv entry makes every other option land in the task
+text.
+
+Foreground:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task <mode flag> "$ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "--write $ARGUMENTS"
 ```
+
+Use `"--read-only $ARGUMENTS"` instead when the request is read-only.
 
 When the request contains `--background`, launch it detached instead:
 
 ```typescript
 Bash({
-  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task <mode flag> "$ARGUMENTS"`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "--write $ARGUMENTS"`,
   description: "Codex rescue",
   run_in_background: true
 })

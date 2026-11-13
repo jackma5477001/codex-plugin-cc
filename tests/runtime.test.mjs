@@ -1146,6 +1146,55 @@ test("task --write opts into a write-capable run", () => {
   assert.equal(fakeState.lastThreadStart.sandbox, "workspace-write");
 });
 
+test("a single argument string keeps model, speed, and write flags parseable", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  // This is the exact shape the command document produces: one string with
+  // the mode flag prepended to the user's raw arguments.
+  const result = run(
+    "node",
+    [SCRIPT, "task", "--write --model sol --fast fix the parser"],
+    { cwd: repo, env: buildEnv(binDir) }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastThreadStart.model, "gpt-6.1-sol");
+  assert.equal(fakeState.lastThreadStart.serviceTier, "priority");
+  assert.equal(fakeState.lastThreadStart.sandbox, "workspace-write");
+  assert.equal(fakeState.lastTurnStart.prompt, "fix the parser");
+});
+
+test("--read-only wins over inherited write mode on an explicit resume", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  assert.equal(
+    run("node", [SCRIPT, "task", "--write", "implement the retry helper"], {
+      cwd: repo,
+      env: buildEnv(binDir)
+    }).status,
+    0
+  );
+  assert.equal(
+    run("node", [SCRIPT, "task", "--read-only continue, but do not change any files"], {
+      cwd: repo,
+      env: buildEnv(binDir)
+    }).status,
+    0
+  );
+
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastResumeStart.sandbox, "read-only");
+});
+
 test("an implicit resume inherits the thread's write mode", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();
