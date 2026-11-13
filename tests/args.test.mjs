@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { splitRawArgumentString } from "../plugins/codex/scripts/lib/args.mjs";
+import { parseArgs, splitRawArgumentString } from "../plugins/codex/scripts/lib/args.mjs";
 
 const BACKSLASH = String.fromCharCode(92);
 
@@ -27,6 +27,22 @@ test("splitRawArgumentString still honors real quoting and escaping", () => {
 
 test("splitRawArgumentString keeps apostrophes inside words", () => {
   assert.deepEqual(splitRawArgumentString("it's fine, don't worry"), ["it's", "fine,", "don't", "worry"]);
+});
+
+test("splitRawArgumentString keeps inline quoted option values intact", () => {
+  assert.deepEqual(splitRawArgumentString('--model="sol" fix it'), ["--model=sol", "fix", "it"]);
+  assert.deepEqual(splitRawArgumentString('--cwd="/tmp/my repo" fix it'), [
+    "--cwd=/tmp/my repo",
+    "fix",
+    "it"
+  ]);
+});
+
+test("an inline --write=false must not become a write run", () => {
+  const { options } = parseArgs(splitRawArgumentString('--write="false" fix it'), {
+    booleanOptions: ["write", "read-only"]
+  });
+  assert.equal(options.write, false);
 });
 
 test("splitRawArgumentString parses a combined mode flag with other options", () => {

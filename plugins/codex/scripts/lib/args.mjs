@@ -120,11 +120,13 @@ export function splitRawArgumentString(raw) {
     }
 
     if (character === "'" || character === "\"") {
-      // A quote only opens a quoted span at a token boundary. This keeps
-      // apostrophes inside words ("it's", "don't") as literal text instead of
-      // swallowing the rest of the input as one quoted token.
+      // A quote opens a quoted span at a token boundary or right after `=`,
+      // so `--model="sol"` and `--cwd="/tmp/my repo"` keep working. Anywhere
+      // else it is literal text, which keeps apostrophes in words like
+      // "it's" and "don't" intact instead of swallowing the rest of the input.
       const atTokenStart = current === "";
-      if (atTokenStart) {
+      const afterEquals = current.endsWith("=");
+      if (atTokenStart || afterEquals) {
         quote = character;
         continue;
       }
