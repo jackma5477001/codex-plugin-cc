@@ -212,28 +212,36 @@ const READ_ONLY_INTENT_PATTERN =
 
 /**
  * Only a blanket prohibition on editing should override an explicit edit
- * request. "do not run tests" or "without adding dependencies" restrict one
- * side activity, not the change itself, so they must not downgrade a fix to a
- * read-only run.
+ * request. Two things do NOT count as blanket:
+ *
+ * - a side activity: "do not run tests", "without adding dependencies"
+ * - a single operation on top of allowed work: "fix the parser, do not delete
+ *   any files" still wants the fix, so it must stay write-capable.
+ *
+ * So this only matches general edit verbs ("change", "fix", "implement", ...)
+ * paired with a blanket object ("anything", "any changes", "the code", ...).
+ * Operation-specific verbs (add / remove / delete / rename) are deliberately
+ * absent: they name one restricted operation, not a blanket stop.
  */
 const EDIT_NOUNS =
   "changes?|(?:further|more|additional|other|any)\\s+changes?|edits?|modifications?|files?|anything|code|the code|the repo|the repository|the workspace|the working tree|the config|the configuration|the config file|this file|that file|this (?:function|module|class|file)|that (?:function|module|class|file)";
 
 const NEGATION = "(?:do not|don't|dont|must not|should not|shouldn't|never)";
-// Any edit verb followed by a blanket object ("anything", "any changes") is a
-// blanket prohibition. "do not run tests" is excluded because "tests" is not a
-// blanket object.
-const ANY_EDIT_VERB =
-  "(?:make|perform|apply|change|edit|modify|touch|write|fix|implement|refactor|rewrite|patch|add|remove|delete|rename|update|migrate)";
+
+// General edit verbs: negating one of these with a blanket object means "stop
+// editing". "run", "add", "delete", "rename" are intentionally excluded.
+const GENERAL_EDIT_VERB =
+  "(?:make|perform|apply|change|edit|modify|touch|write|fix|implement|refactor|rewrite|patch|update|migrate)";
 
 const NEGATED_EDIT_PATTERN = new RegExp(
   [
-    // "do not fix anything", "don't make any further changes"
-    `${NEGATION}\\s+(?:yet\\s+)?${ANY_EDIT_VERB}\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`,
+    // "do not fix anything", "don't make any further changes", "never touch the config"
+    `${NEGATION}\\s+(?:yet\\s+)?${GENERAL_EDIT_VERB}\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`,
     // "do not apply the top fix yet"
     `${NEGATION}\\s+(?:yet\\s+)?apply\\s+(?:the|that|this)\\s+(?:top|first|last|fix|change|patch)`,
-    // "avoid changing anything", "without making changes"
-    `(?:avoid|without)\\s+(?:making|applying|performing|changing|editing|modifying|touching|writing|fixing|implementing)\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`
+    // "avoid changing anything", "without making changes"; "without adding
+    // dependencies" is absent on purpose because it is a partial restriction.
+    `(?:avoid|without)\\s+(?:making|applying|performing|changing|editing|modifying|touching|writing|fixing|implementing|refactoring|rewriting|patching|updating|migrating)\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`
   ]
     .map((source) => `\\b${source}\\b`)
     .join("|"),

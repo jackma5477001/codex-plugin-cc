@@ -1300,11 +1300,15 @@ test("blanket negated edit instructions stay read-only", () => {
   }
 });
 
-test("partial negations do not downgrade an explicit edit request", () => {  const binDir = makeTempDir();
+test("partial negations do not downgrade an explicit edit request", () => {
+  const binDir = makeTempDir();
 
   const cases = [
     "implement the retry helper, do not run tests",
-    "fix the parser without adding dependencies"
+    "fix the parser without adding dependencies",
+    // Operation-specific restrictions still allow the requested edit.
+    "fix the parser, do not delete any files",
+    "implement the helper, do not add files"
   ];
 
   for (const prompt of cases) {
