@@ -79,11 +79,19 @@ const ESCAPABLE = new Set(["\\", "\"", "'"]);
 /**
  * Splits a raw slash-command argument string into tokens.
  *
- * A backslash is only consumed when it escapes a quote or another backslash.
- * Treating every backslash as an escape character corrupts Windows paths and
- * regular expressions: `fix C:\repo\src\parser.js` would become
- * `fix C:reposrcparser.js` and `\d+` would become `d+`. Any other backslash is
- * kept verbatim.
+ * The rules below are driven by real regressions; keep them in sync with
+ * tests/args.test.mjs before changing any of them.
+ *
+ * Backslashes: only consumed when escaping a quote, a space, or another
+ * backslash. Treating every backslash as an escape corrupts Windows paths and
+ * regular expressions (`fix C:\repo\src\parser.js` -> `fix C:reposrcparser.js`,
+ * `\d+` -> `d+`). Everything else is kept verbatim.
+ *
+ * Quotes: a double quote always opens a quoted span, so partial splicing such
+ * as `--cwd /tmp/"my repo"` and inline values such as `--model="sol"` work.
+ * A single quote only opens one at a token boundary or right after `=`, which
+ * keeps apostrophes in `it's` and `don't` literal. Inline `--write="false"`
+ * must keep parsing as false; it is a write-permission boundary.
  */
 export function splitRawArgumentString(raw) {
   const tokens = [];
