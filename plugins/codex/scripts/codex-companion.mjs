@@ -216,19 +216,25 @@ function resolveTaskWriteMode(options) {
   return Boolean(options.write);
 }
 
-function normalizeArgv(argv) {
+function normalizeArgv(argv, config = {}) {
   if (argv.length === 1) {
     const [raw] = argv;
     if (!raw || !raw.trim()) {
       return [];
     }
-    return splitRawArgumentString(raw);
+    return splitRawArgumentString(raw, {
+      valueOptions: new Set(config.valueOptions ?? []),
+      aliasMap: {
+        C: "cwd",
+        ...(config.aliasMap ?? {})
+      }
+    });
   }
   return argv;
 }
 
 function parseCommandInput(argv, config = {}) {
-  return parseArgs(normalizeArgv(argv), {
+  return parseArgs(normalizeArgv(argv, config), {
     ...config,
     aliasMap: {
       C: "cwd",

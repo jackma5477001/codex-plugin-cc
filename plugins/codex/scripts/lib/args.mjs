@@ -1,21 +1,36 @@
+/**
+ * Parses CLI arguments.
+ *
+ * A token is an option when it starts with `-`, is not quoted, and is not inside
+ * a prose span that already started. This keeps the two patterns users expect:
+ *
+ * - flags anywhere: `task-live --wait --json` and `--write fix it` both work.
+ * - prose stays literal once text has begun: in `--write inspect O'Brien
+ *   --read-only`, the trailing `--read-only` reads as prose only when it is
+ *   quoted. Unquoted, it is a flag, which is why the rescue command document
+ *   tells the model to quote the user's text.
+ *
+ * Quoting is the tool that disambiguates: anything inside quotes is text, never
+ * an option. `--` ends option parsing entirely.
+ */
 export function parseArgs(argv, config = {}) {
   const valueOptions = new Set(config.valueOptions ?? []);
   const booleanOptions = new Set(config.booleanOptions ?? []);
   const aliasMap = config.aliasMap ?? {};
   const options = {};
   const positionals = [];
-  let passthrough = false;
+  let optionsEnded = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
 
-    if (passthrough) {
+    if (optionsEnded) {
       positionals.push(token);
       continue;
     }
 
     if (token === "--") {
-      passthrough = true;
+      optionsEnded = true;
       continue;
     }
 
@@ -45,6 +60,7 @@ export function parseArgs(argv, config = {}) {
         continue;
       }
 
+      // Unknown flags are prose so a typo does not silently change behavior.
       positionals.push(token);
       continue;
     }
@@ -77,142 +93,166 @@ export function parseArgs(argv, config = {}) {
 const ESCAPABLE = new Set(["\\", "\"", "'"]);
 
 /**
- * True when the single quote at `index` should be read as an apostrophe rather
- * than as the start of a quoted span.
+ * Reads one whitespace-delimited token starting at `start`, honoring quotes.
  *
- * Two signals, either is enough:
- * - it sits between two word characters (`it's`, `don't`, `O'Brien`);
- * - there is no matching unescaped single quote later, so it cannot be a
- *   delimiter (`users' files`).
+ * Double quotes follow POSIX: `\"` and `\\` are escapes, any other backslash is
+ * literal (so `"C:\my repo"` keeps its path separators).
  *
- * This is what lets `docs/'task prompt.md'` and `/tmp/'my repo'` splice while
- * `O'Brien --read-only` keeps its apostrophe and does not swallow the flag.
+ * Single quotes are literal, with exactly one escape: `\'` yields an apostrophe
+ * and does not close the span. That keeps both a UNC prefix
+ * (`'\\server\share'`) and `'don\'t'` intact.
+ *
+ * A single quote that sits between two word characters and has no closing
+ * partner is an apostrophe, not a quote delimiter, so `O'Brien` and
+ * `users' files` stay whole.
  */
-function isApostrophe(characters, index) {
-  const previous = characters[index - 1];
-  const next = characters[index + 1];
-  if (/[A-Za-z0-9]/.test(previous ?? "") && /[A-Za-z0-9]/.test(next ?? "")) {
-    return true;
-  }
-  return !hasClosingSingleQuote(characters, index);
-}
+function readToken(text, start) {
+  let token = "";
+  let index = start;
+  let quoted = false;
 
-function hasClosingSingleQuote(characters, startIndex) {
-  for (let index = startIndex + 1; index < characters.length; index += 1) {
-    if (characters[index] === "\\") {
-      index += 1; // skip the escaped character
-      continue;
-    }
-    if (characters[index] === "'") {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Splits a raw slash-command argument string into tokens.
- *
- * The rules below are driven by real regressions; keep them in sync with
- * tests/args.test.mjs before changing any of them.
- *
- * Backslashes outside quotes: only consumed when escaping a quote, a space, or
- * another backslash. Treating every backslash as an escape corrupts Windows
- * paths and regular expressions (`C:\repo\src\x.js` -> `C:reposrcx.js`,
- * `\d+` -> `d+`), so everything else is kept verbatim.
- *
- * Backslashes inside single quotes: only `\'` is special, so it cannot close
- * the span early. Every other backslash is literal, which keeps a UNC prefix
- * (`'\\server\share'`) intact.
- *
- * Quotes: a double quote always opens a span, so partial splicing such as
- * `--cwd /tmp/"my repo"` and inline `--model="sol"` work. A single quote opens
- * one unless it reads as an apostrophe (see isApostrophe). Inline
- * `--write="false"` must keep parsing as false: it is a write-permission
- * boundary.
- */
-export function splitRawArgumentString(raw) {
-  const tokens = [];
-  let current = "";
-  let quote = null;
-  const characters = [...raw];
-
-  for (let index = 0; index < characters.length; index += 1) {
-    const character = characters[index];
-
-    if (quote === "'") {
-      // Only \' is special inside single quotes; \d, \\server etc. stay literal.
-      if (character === "\\" && characters[index + 1] === "'") {
-        current += "'";
-        index += 1;
-        continue;
-      }
-      if (character === "'") {
-        quote = null;
-        continue;
-      }
-      current += character;
-      continue;
-    }
-
-    if (quote === "\"") {
-      // Only \" is special inside double quotes. Backslash is a path character
-      // on Windows, so `"\\server\share"` must keep both leading backslashes.
-      if (character === "\\" && characters[index + 1] === "\"") {
-        current += "\"";
-        index += 1;
-        continue;
-      }
-      if (character === "\"") {
-        quote = null;
-        continue;
-      }
-      current += character;
-      continue;
-    }
-
-    if (character === "\\") {
-      const next = characters[index + 1];
-      if (next === undefined) {
-        current += character;
-        continue;
-      }
-      if (ESCAPABLE.has(next) || /\s/.test(next)) {
-        current += next;
-        index += 1;
-        continue;
-      }
-      current += character;
-      continue;
-    }
+  while (index < text.length && !/\s/.test(text[index])) {
+    const character = text[index];
 
     if (character === "\"") {
-      quote = character;
+      quoted = true;
+      index += 1;
+      while (index < text.length && text[index] !== "\"") {
+        // Inside double quotes only \" escapes the quote. Backslash is a path
+        // character, so `"\\server\share"` keeps both leading backslashes.
+        if (text[index] === "\\" && text[index + 1] === "\"") {
+          token += "\"";
+          index += 2;
+          continue;
+        }
+        token += text[index];
+        index += 1;
+      }
+      index += 1; // closing quote
       continue;
     }
 
     if (character === "'") {
-      if (isApostrophe(characters, index)) {
-        current += character;
+      if (isApostrophe(text, index)) {
+        token += character;
+        index += 1;
         continue;
       }
-      quote = character;
-      continue;
-    }
-
-    if (/\s/.test(character)) {
-      if (current) {
-        tokens.push(current);
-        current = "";
+      quoted = true;
+      index += 1;
+      let closed = false;
+      while (index < text.length) {
+        if (text[index] === "\\" && text[index + 1] === "'") {
+          token += "'";
+          index += 2;
+          continue;
+        }
+        if (text[index] === "'") {
+          closed = true;
+          index += 1;
+          break;
+        }
+        token += text[index];
+        index += 1;
+      }
+      // An unterminated quote keeps consuming to the end of the input, so the
+      // text inside it can never be reinterpreted as a flag.
+      if (!closed) {
+        break;
       }
       continue;
     }
 
-    current += character;
+    token += character;
+    index += 1;
   }
 
-  if (current) {
-    tokens.push(current);
+  return { token, end: index, quoted };
+}
+
+/**
+ * True when the single quote at `index` is an apostrophe, not a delimiter.
+ *
+ * It is an apostrophe when a word character precedes it (`O'Brien`, `don't`)
+ * and, if quoted text follows, there is no partner quote later. A lone leading
+ * quote always opens a span instead, so an unclosed quote cannot expose the
+ * text inside it to option parsing.
+ */
+function isApostrophe(text, index) {
+  const previous = text[index - 1] ?? "";
+  if (!/[A-Za-z0-9]/.test(previous)) {
+    return false;
+  }
+  const next = text[index + 1] ?? "";
+  if (/[A-Za-z0-9]/.test(next)) {
+    return true; // O'Brien, don't
+  }
+  // users' / admins' -- possessive at a word end, nothing to pair with.
+  for (let cursor = index + 1; cursor < text.length; cursor += 1) {
+    if (text[cursor] === "\\") {
+      cursor += 1;
+      continue;
+    }
+    if (text[cursor] === "'") {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Splits a raw slash-command argument string into tokens for `parseArgs`.
+ *
+ * Option-looking tokens (`-x`, `--flag`) are kept as flags wherever they appear,
+ * so `task-live --wait --json` and `--write fix it` both work. Quoted text is
+ * always literal: a token whose leading character was inside quotes is emitted
+ * as prose, which is how a prompt that mentions `--read-only` stays inert. The
+ * rescue command document therefore quotes the user's raw text.
+ *
+ * `valueOptions` is needed so `--model sol` keeps `sol` attached to the flag.
+ */
+export function splitRawArgumentString(raw, options = {}) {
+  const valueOptions = options.valueOptions ?? new Set();
+  const aliasMap = options.aliasMap ?? {};
+  const text = String(raw ?? "");
+  const tokens = [];
+  let index = 0;
+
+  while (index < text.length) {
+    while (index < text.length && /\s/.test(text[index])) {
+      index += 1;
+    }
+    if (index >= text.length) {
+      break;
+    }
+
+    const startedQuoted = text[index] === "'" || text[index] === "\"";
+    const { token, end } = readToken(text, index);
+    index = end;
+
+    const looksLikeFlag = !startedQuoted && (token.startsWith("-") || token.startsWith("--"));
+    if (!looksLikeFlag) {
+      tokens.push(token);
+      continue;
+    }
+
+    tokens.push(token);
+
+    // `--model sol` and `-m sol` consume the next token as the option value.
+    const isLongFlag = token.startsWith("--") && !token.includes("=");
+    const isShortFlag = !token.startsWith("--") && token.length === 2;
+    const rawKey = isLongFlag ? token.slice(2) : isShortFlag ? token.slice(1) : null;
+    const key = rawKey === null ? null : aliasMap[rawKey] ?? rawKey;
+    if (key && valueOptions.has(key)) {
+      while (index < text.length && /\s/.test(text[index])) {
+        index += 1;
+      }
+      if (index < text.length) {
+        const next = readToken(text, index);
+        tokens.push(next.token);
+        index = next.end;
+      }
+    }
   }
 
   return tokens;

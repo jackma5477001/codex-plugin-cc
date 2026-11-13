@@ -32,17 +32,21 @@ If the user already passed `--write` or `--read-only`, do not add a second mode 
 
 ## Step 2 — run it
 
-Put the mode flag into the argument string itself. The script only splits a single argument
-string, so passing the flag as a separate argv entry makes every other option land in the task
-text.
-
-Foreground:
+Put the mode flag into the argument string, and **wrap the user's raw text in double quotes** so a
+sentences mention of `--write` or `--read-only` stays prose instead of turning into a flag:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "--write $ARGUMENTS"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "--write \"$ARGUMENTS\""
 ```
 
-Use `"--read-only $ARGUMENTS"` instead when the request is read-only.
+Use `--read-only` in place of `--write` for read-only requests.
+
+Rules for building that command:
+
+- The mode flag goes outside the quotes; the user's text goes inside them.
+- The script only splits a single argument string, so everything must be one quoted argument.
+- If the user's text itself contains a double quote, switch that span to single quotes instead.
+- Do not escape or rewrite the user's text otherwise.
 
 When the request contains `--background`, launch it detached instead:
 
