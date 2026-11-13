@@ -30,3 +30,20 @@ export function initGitRepo(cwd) {
   run("git", ["config", "commit.gpgsign", "false"], { cwd });
   run("git", ["config", "tag.gpgsign", "false"], { cwd });
 }
+
+/**
+ * Returns a copy of the process environment with the variables a real Claude
+ * Code session injects removed, so tests that spawn the CLI keep their own
+ * session scoping and state locations.
+ */
+export function cleanEnv(overrides = {}) {
+  const env = { ...process.env };
+  for (const name of [
+    "CODEX_COMPANION_SESSION_ID",
+    "CODEX_COMPANION_TRANSCRIPT_PATH",
+    "CODEX_COMPANION_APP_SERVER_ENDPOINT"
+  ]) {
+    delete env[name];
+  }
+  return { ...env, ...overrides };
+}

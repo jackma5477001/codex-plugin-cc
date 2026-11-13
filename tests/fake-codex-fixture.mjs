@@ -727,8 +727,22 @@ rl.on("line", (line) => {
 
 export function buildEnv(binDir) {
   const sep = process.platform === "win32" ? ";" : ":";
+  // When the suite runs inside a real Claude Code session (for example via a
+  // plugin), these variables leak in and change session scoping. Strip them so
+  // tests stay hermetic; tests that need a session id set it explicitly.
+  //
+  // CLAUDE_PLUGIN_DATA is deliberately kept: tests compute state paths in
+  // process and pass this env to the child, so both sides must agree on it.
+  const env = { ...process.env };
+  for (const name of [
+    "CODEX_COMPANION_SESSION_ID",
+    "CODEX_COMPANION_TRANSCRIPT_PATH",
+    "CODEX_COMPANION_APP_SERVER_ENDPOINT"
+  ]) {
+    delete env[name];
+  }
   return {
-    ...process.env,
+    ...env,
     PATH: `${binDir}${sep}${process.env.PATH}`
   };
 }

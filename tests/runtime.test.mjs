@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { buildEnv, installFakeCodex } from "./fake-codex-fixture.mjs";
-import { initGitRepo, makeTempDir, run } from "./helpers.mjs";
+import { cleanEnv, initGitRepo, makeTempDir, run } from "./helpers.mjs";
 import { loadBrokerSession, saveBrokerSession } from "../plugins/codex/scripts/lib/broker-lifecycle.mjs";
 import { resolveStateDir } from "../plugins/codex/scripts/lib/state.mjs";
 
@@ -1590,7 +1590,8 @@ test("status shows phases, hints, and the latest finished job", () => {
   );
 
   const result = run("node", [SCRIPT, "status"], {
-    cwd: workspace
+    cwd: workspace,
+    env: cleanEnv()
   });
 
   assert.equal(result.status, 0, result.stderr);
@@ -1734,7 +1735,8 @@ test("status preserves adversarial review kind labels", () => {
   );
 
   const result = run("node", [SCRIPT, "status"], {
-    cwd: workspace
+    cwd: workspace,
+    env: cleanEnv()
   });
 
   assert.equal(result.status, 0, result.stderr);
@@ -1795,6 +1797,8 @@ test("status --wait times out cleanly when a job is still active", () => {
 
   const result = run("node", [SCRIPT, "status", "task-live", "--wait", "--timeout-ms", "25", "--json"], {
     cwd: workspace
+  ,
+    env: cleanEnv()
   });
 
   assert.equal(result.status, 0, result.stderr);
@@ -1858,6 +1862,8 @@ test("result returns the stored output for the latest finished job by default", 
 
   const result = run("node", [SCRIPT, "result"], {
     cwd: workspace
+  ,
+    env: cleanEnv()
   });
 
   assert.equal(result.status, 0, result.stderr);
@@ -2062,6 +2068,8 @@ test("cancel stops an active background job and marks it cancelled", async (t) =
 
   const cancelResult = run("node", [SCRIPT, "cancel", "task-live", "--json"], {
     cwd: workspace
+  ,
+    env: cleanEnv()
   });
 
   assert.equal(cancelResult.status, 0, cancelResult.stderr);
@@ -2697,12 +2705,16 @@ test("setup and status honor --cwd when reading shared session runtime", () => {
 
   const status = run("node", [SCRIPT, "status", "--cwd", targetWorkspace], {
     cwd: invocationWorkspace
+  ,
+    env: cleanEnv()
   });
   assert.equal(status.status, 0, status.stderr);
   assert.match(status.stdout, /Session runtime: shared session/);
 
   const setup = run("node", [SCRIPT, "setup", "--cwd", targetWorkspace, "--json"], {
     cwd: invocationWorkspace
+  ,
+    env: cleanEnv()
   });
   assert.equal(setup.status, 0, setup.stderr);
   const payload = JSON.parse(setup.stdout);
