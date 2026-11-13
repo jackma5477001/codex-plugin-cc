@@ -1269,6 +1269,57 @@ test("negated edit instructions stay read-only", () => {
   assert.equal(fakeState.lastResumeStart.sandbox, "read-only");
 });
 
+test("partial negations do not downgrade an explicit edit request", () => {
+  const binDir = makeTempDir();
+
+  const cases = [
+    "implement the retry helper, do not run tests",
+    "fix the parser without adding dependencies"
+  ];
+
+  for (const prompt of cases) {
+    const repo = makeTempDir();
+    initGitRepo(repo);
+    installFakeCodex(binDir);
+
+    const result = run("node", [SCRIPT, "task", prompt], { cwd: repo, env: buildEnv(binDir) });
+    assert.equal(result.status, 0, result.stderr);
+
+    const statePath = path.join(binDir, "fake-codex-state.json");
+    const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    assert.equal(fakeState.lastThreadStart.sandbox, "workspace-write", prompt);
+    fs.rmSync(statePath, { force: true });
+  }
+});
+
+test("background review persists the job before spawning its worker", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "changed\n");
+
+  const launched = run("node", [SCRIPT, "review", "--background", "--json"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(launched.status, 0, launched.stderr);
+  const payload = JSON.parse(launched.stdout);
+
+  // The job record must exist and carry the request immediately after launch,
+  // before the detached worker has had time to finish.
+  const stateDir = resolveStateDir(repo);
+  const jobFile = path.join(stateDir, "jobs", `${payload.jobId}.json`);
+  assert.equal(fs.existsSync(jobFile), true, "job file missing right after launch");
+  const stored = JSON.parse(fs.readFileSync(jobFile, "utf8"));
+  assert.equal(stored.request?.reviewName, "Review");
+  assert.ok(stored.request?.cwd, "request payload was not persisted");
+});
+
 test("task rejects an unsupported speed mode", () => {
   const repo = makeTempDir();
   const binDir = makeTempDir();

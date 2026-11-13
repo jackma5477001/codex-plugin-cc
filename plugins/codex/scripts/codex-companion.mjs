@@ -211,12 +211,30 @@ const READ_ONLY_INTENT_PATTERN =
   /\b(review|investigate|diagnose|diagnosis|analy[sz]e|research|explain|summari[sz]e|look into|why (is|does|did)|read[- ]only|do not (change|edit|modify|touch)|don't (change|edit|modify|touch)|without (changing|editing|modifying|making)|no changes?|no edits?)\b/i;
 
 /**
- * Negated instructions must short-circuit every write decision. "do not apply
- * the top fix yet" mentions a fix, and "don't make any changes" is hard to
- * cover with a fixed phrase list, so this matches any negated edit verb.
+ * Only a blanket prohibition on editing should override an explicit edit
+ * request. "do not run tests" or "without adding dependencies" restrict one
+ * side activity, not the change itself, so they must not downgrade a fix to a
+ * read-only run.
  */
-const NEGATED_EDIT_PATTERN =
-  /\b(?:do not|don't|dont|must not|should not|shouldn't|never|no need to)\s+(?:yet\s+)?(?:apply|make|perform|run|start|change|edit|modify|touch|write|add|remove|delete|rename|refactor|fix|update|migrate|rewrite|patch)\b|\bavoid\s+(?:applying|making|performing|running|starting|changing|editing|modifying|touching|writing|adding|removing|deleting|renaming|refactoring|fixing|updating|migrating|rewriting|patching)\b|\bwithout\s+(?:applying|making|performing|running|starting|changing|editing|modifying|touching|writing|adding|removing|deleting|renaming|refactoring|fixing|updating|migrating|rewriting|patching)\b/i;
+const EDIT_NOUNS =
+  "changes?|edits?|modifications?|files?|anything|code|the code|the repo|the repository|the workspace|the working tree|the config|the configuration|the config file|this file|that file|this (?:function|module|class|file)|that (?:function|module|class|file)";
+
+const NEGATION = "(?:do not|don't|dont|must not|should not|shouldn't|never)";
+const BLANKET_VERBS = "(?:make|perform|change|edit|modify|touch|write)";
+
+const NEGATED_EDIT_PATTERN = new RegExp(
+  [
+    // "do not change any files", "don't make any changes", "never touch anything"
+    `${NEGATION}\\s+(?:yet\\s+)?${BLANKET_VERBS}\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`,
+    // "do not apply the top fix yet"
+    `${NEGATION}\\s+(?:yet\\s+)?apply\\s+(?:the|that|this)\\s+(?:top|first|last|fix|change|patch)`,
+    // "avoid changing anything", "without making changes"
+    `(?:avoid|without)\\s+(?:making|applying|performing|changing|editing|modifying|touching|writing)\\s+(?:any\\s+)?(?:${EDIT_NOUNS})`
+  ]
+    .map((source) => `\\b${source}\\b`)
+    .join("|"),
+  "i"
+);
 
 function resolveTaskWriteMode(options, prompt, context = {}) {
   // Explicit flags always win.
@@ -1138,17 +1156,24 @@ function enqueueBackgroundReview(cwd, job, request) {
   const { logFile } = createTrackedProgress(job);
   appendLogLine(logFile, "Queued for background execution.");
 
-  const child = spawnDetachedReviewWorker(cwd, job.id);
+  // Persist the job BEFORE spawning, otherwise the worker can start, look up
+  // an id that is not on disk yet, and exit silently while the parent still
+  // reports a successful queue.
   const queuedRecord = {
     ...job,
     status: "queued",
     phase: "queued",
-    pid: child.pid ?? null,
+    pid: null,
     logFile,
     request
   };
   writeJobFile(job.workspaceRoot, job.id, queuedRecord);
   upsertJob(job.workspaceRoot, queuedRecord);
+
+  const child = spawnDetachedReviewWorker(cwd, job.id);
+  // The record is already stored, so only patch the pid into the index. Never
+  // rewrite the whole job file here: the worker may have updated it already.
+  upsertJob(job.workspaceRoot, { id: job.id, pid: child.pid ?? null });
 
   return {
     payload: {
