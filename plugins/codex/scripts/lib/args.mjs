@@ -170,10 +170,23 @@ function readToken(text, start) {
         index += 1;
         continue;
       }
-      // Outside quotes a backslash escapes a quote, a space, or another
-      // backslash: `/tmp/my\ repo` is one token and `\"hi\"` keeps its quotes.
-      // Any other backslash is a literal path separator (`C:\repo\x.js`).
-      if (next === "\\" || next === "\"" || next === "'" || /\s/.test(next)) {
+      // Outside quotes, a backslash escapes a quote or another backslash.
+      // Spaces are NOT escaped: backslash is a Windows path separator, and
+      // `C:\repo\ --read-only` must not swallow the flag that follows.
+      // A doubled backslash at the start of a token is a UNC prefix and is
+      // kept as-is (`\\server\share`); anywhere else it collapses to one.
+      const atTokenStart = token === "";
+      if (next === "\\") {
+        if (atTokenStart) {
+          token += "\\\\";
+          index += 2;
+          continue;
+        }
+        token += "\\";
+        index += 2;
+        continue;
+      }
+      if (next === "\"" || next === "'") {
         token += next;
         index += 2;
         continue;

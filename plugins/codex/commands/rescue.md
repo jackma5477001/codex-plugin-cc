@@ -52,11 +52,12 @@ Rules:
 - The script only splits a single argument string, so the whole thing is one quoted argument.
 - The mode flag goes first, outside the prose quotes.
 
-When the request contains `--background`, launch it detached instead:
+When the request contains `--background`, launch it detached instead. The template literal needs
+the inner quotes escaped twice: `\\"` survives JavaScript and reaches Bash as `\"`.
 
 ```typescript
 Bash({
-  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "--write --model sol \"fix the parser\""`,
+  command: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-companion.mjs" task "--write --model sol \\"fix the parser\\""`,
   description: "Codex rescue",
   run_in_background: true
 })

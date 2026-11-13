@@ -69,8 +69,19 @@ test("user flags outside the prose quotes still apply", () => {
   assert.deepEqual(positionals, ["fix the parser"]);
 });
 
-test("backslash escapes work outside quotes", () => {
-  assert.equal(parse(`--cwd /tmp/my${BACKSLASH} repo fix`).options.cwd, "/tmp/my repo");
+test("a trailing-backslash path does not swallow the following flag", () => {
+  // Backslash is a path separator on Windows, so it must not escape the space.
+  const { options, positionals } = parse(`--write inspect C:${BACKSLASH}repo${BACKSLASH} --read-only`);
+  assert.equal(options["read-only"], true);
+  assert.deepEqual(positionals, ["inspect", `C:${BACKSLASH}repo${BACKSLASH}`]);
+});
+
+test("an unquoted UNC prefix keeps both backslashes", () => {
+  const unc = `${BACKSLASH}${BACKSLASH}server${BACKSLASH}repo`;
+  assert.equal(parse(`--cwd ${unc} fix`).options.cwd, unc);
+});
+
+test("backslash before a quote still escapes it, outside quotes", () => {
   assert.deepEqual(parse(`say ${BACKSLASH}"hi${BACKSLASH}"`).positionals, ["say", '"hi"']);
 });
 
