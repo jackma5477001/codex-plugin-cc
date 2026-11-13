@@ -73,21 +73,40 @@ export function parseArgs(argv, config = {}) {
   return { options, positionals };
 }
 
+/** Characters a backslash may escape inside the raw argument string. */
+const ESCAPABLE = new Set(["\\", "\"", "'"]);
+
+/**
+ * Splits a raw slash-command argument string into tokens.
+ *
+ * A backslash is only consumed when it escapes a quote or another backslash.
+ * Treating every backslash as an escape character corrupts Windows paths and
+ * regular expressions: `fix C:\repo\src\parser.js` would become
+ * `fix C:reposrcparser.js` and `\d+` would become `d+`. Any other backslash is
+ * kept verbatim.
+ */
 export function splitRawArgumentString(raw) {
   const tokens = [];
   let current = "";
   let quote = null;
-  let escaping = false;
+  const characters = [...raw];
 
-  for (const character of raw) {
-    if (escaping) {
-      current += character;
-      escaping = false;
-      continue;
-    }
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
 
     if (character === "\\") {
-      escaping = true;
+      const next = characters[index + 1];
+      // Inside single quotes a backslash is literal (POSIX shell behavior).
+      if (quote === "'" || next === undefined) {
+        current += character;
+        continue;
+      }
+      if (ESCAPABLE.has(next) || /\s/.test(next)) {
+        current += next;
+        index += 1;
+        continue;
+      }
+      current += character;
       continue;
     }
 
@@ -101,7 +120,15 @@ export function splitRawArgumentString(raw) {
     }
 
     if (character === "'" || character === "\"") {
-      quote = character;
+      // A quote only opens a quoted span at a token boundary. This keeps
+      // apostrophes inside words ("it's", "don't") as literal text instead of
+      // swallowing the rest of the input as one quoted token.
+      const atTokenStart = current === "";
+      if (atTokenStart) {
+        quote = character;
+        continue;
+      }
+      current += character;
       continue;
     }
 
@@ -114,10 +141,6 @@ export function splitRawArgumentString(raw) {
     }
 
     current += character;
-  }
-
-  if (escaping) {
-    current += "\\";
   }
 
   if (current) {
