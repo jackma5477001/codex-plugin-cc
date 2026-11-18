@@ -801,7 +801,40 @@ test("task resolves current model aliases and passes concrete ids through", () =
 
   assert.equal(result.status, 0, result.stderr);
   const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-  assert.equal(fakeState.lastTurnStart.model, "gpt-6.1-sol");
+  assert.equal(fakeState.lastTurnStart.model, "gpt-6.2-sol");
+});
+
+test("every model alias resolves, and pinned generations stay reachable", () => {
+  // Guards against a Codex catalog bump silently leaving an alias on an
+  // outdated generation: the plain names must track the newest models.
+  const expectations = [
+    ["sol", "gpt-6.2-sol"],
+    ["astra", "gpt-6.2-astra"],
+    ["terra", "gpt-6.1-terra"],
+    ["luna", "gpt-6-luna"],
+    ["spark", "gpt-6-luna"],
+    ["sol61", "gpt-6.1-sol"],
+    ["astra6", "gpt-6-astra"],
+    ["sol6", "gpt-6-sol"]
+  ];
+  const binDir = makeTempDir();
+
+  for (const [alias, expected] of expectations) {
+    const repo = makeTempDir();
+    initGitRepo(repo);
+    installFakeCodex(binDir);
+
+    const result = run("node", [SCRIPT, "task", "--model", alias, "diagnose"], {
+      cwd: repo,
+      env: buildEnv(binDir)
+    });
+    assert.equal(result.status, 0, `${alias}: ${result.stderr}`);
+
+    const statePath = path.join(binDir, "fake-codex-state.json");
+    const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    assert.equal(fakeState.lastTurnStart.model, expected, alias);
+    fs.rmSync(statePath, { force: true });
+  }
 });
 
 test("task --fast forwards the priority service tier to thread/start and turn/start", () => {
@@ -885,7 +918,7 @@ test("review forwards --model and --effort to the review thread", () => {
 
   assert.equal(result.status, 0, result.stderr);
   const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-  assert.equal(fakeState.lastThreadStart.model, "gpt-6-astra");
+  assert.equal(fakeState.lastThreadStart.model, "gpt-6.2-astra");
   assert.equal(fakeState.lastThreadStart.reasoningEffort, "high");
   assert.equal(fakeState.lastThreadStart.serviceTier, "priority");
 });
@@ -908,7 +941,7 @@ test("adversarial review forwards --model, --effort, and --fast", () => {
 
   assert.equal(result.status, 0, result.stderr);
   const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-  assert.equal(fakeState.lastTurnStart.model, "gpt-6-astra");
+  assert.equal(fakeState.lastTurnStart.model, "gpt-6.2-astra");
   assert.equal(fakeState.lastTurnStart.effort, "high");
   assert.equal(fakeState.lastTurnStart.serviceTier, "priority");
 });
@@ -1163,7 +1196,7 @@ test("a single argument string keeps model, speed, and write flags parseable", (
 
   assert.equal(result.status, 0, result.stderr);
   const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
-  assert.equal(fakeState.lastThreadStart.model, "gpt-6.1-sol");
+  assert.equal(fakeState.lastThreadStart.model, "gpt-6.2-sol");
   assert.equal(fakeState.lastThreadStart.serviceTier, "priority");
   assert.equal(fakeState.lastThreadStart.sandbox, "workspace-write");
   assert.equal(fakeState.lastTurnStart.prompt, "fix the parser");

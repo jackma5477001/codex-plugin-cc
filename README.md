@@ -168,7 +168,7 @@ Ask Codex to redesign the database connection to be more resilient.
 **Notes:**
 
 - if you do not pass `--model`, `--effort`, or `--fast`, Codex chooses its own defaults.
-- model shorthands: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, `astra` → `gpt-6-astra`; the legacy alias `spark` maps to `gpt-6-luna`
+- model shorthands: `sol` → `gpt-6.2-sol`, `astra` → `gpt-6.2-astra`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`; the legacy alias `spark` maps to `gpt-6-luna`
 - `--effort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`, depending on what the selected model supports
 - follow-up rescue requests can continue the latest Codex task in the repo
 

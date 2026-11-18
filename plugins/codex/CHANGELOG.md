@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.9
+
+- Tracked the Codex catalog bump to GPT-6.2: the `sol` alias now resolves to `gpt-6.2-sol` and `astra` to `gpt-6.2-astra`, matching the model Codex itself defaults to.
+- Added pinned aliases for older generations so existing scripts keep working: `sol61` → `gpt-6.1-sol`, `sol6` → `gpt-6-sol`, `astra6` → `gpt-6-astra`. `terra` stays on `gpt-6.1-terra` and `luna`/`spark` on `gpt-6-luna`.
+- Added a test that asserts every alias target, so a future catalog bump cannot silently leave an alias pointing at a retired generation.
+
 ## 1.0.8
 
 - Added `/codex:usage` to read the plan, rate limits, reset credits, and lifetime token usage from the Codex app server.

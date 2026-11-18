@@ -52,8 +52,8 @@ Run the command with the chosen flag appended, then return its stdout verbatim.
 - Preserve the user's arguments exactly; do not rewrite the user's intent.
 - `--model` selects the Codex model, `--effort` sets its reasoning level, `--fast` enables Codex
   fast mode. Pass all three through unchanged and never treat them as review focus text.
-- Model aliases: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`,
-  `astra` → `gpt-6-astra`, legacy `spark` → `gpt-6-luna`.
+- Model aliases: `sol` → `gpt-6.2-sol`, `astra` → `gpt-6.2-astra`, `terra` → `gpt-6.1-terra`,
+  `luna` → `gpt-6-luna`, legacy `spark` → `gpt-6-luna`.
 - `/codex:review` is native-review only. It does not support staged-only review, unstaged-only
   review, or extra focus text.
 - If the user needs custom review instructions or more adversarial framing, point them at

@@ -20,7 +20,7 @@ Execution rules:
 - That prompt drafting is the only Claude-side work allowed. Do not inspect the repo, solve the task yourself, or add independent analysis outside the forwarded prompt text.
 - Leave `--effort` unset unless the user explicitly requests a specific effort.
 - Leave model unset by default. Add `--model` only when the user explicitly asks for one.
-- Map the current aliases to their models: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, `astra` → `gpt-6-astra`. The legacy alias `spark` maps to `gpt-6-luna`.
+- Map the current aliases to their models: `sol` → `gpt-6.2-sol`, `astra` → `gpt-6.2-astra`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`. The legacy alias `spark` maps to `gpt-6-luna`.
 - Add `--fast` only when the user explicitly asks for Codex fast/speed mode.
 - Default to a write-capable Codex run by adding `--write` unless the user explicitly asks for read-only behavior or only wants review, diagnosis, or research without edits.
 - The script itself never infers write mode from the prompt: without `--write` every run is read-only. Deciding the mode here is therefore required for fixes to actually land.

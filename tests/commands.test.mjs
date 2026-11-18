@@ -118,8 +118,8 @@ test("rescue command absorbs continue semantics", () => {
   assert.match(agent, /Do not call `review`, `adversarial-review`, `status`, `result`, or `cancel`/i);
   assert.match(agent, /Leave `--effort` unset unless the user explicitly requests a specific reasoning effort/i);
   assert.match(agent, /Leave model unset by default/i);
-  assert.match(agent, /Current aliases: `sol` → `gpt-6\.1-sol`/i);
-  assert.match(agent, /If the user asks for a concrete model name such as `gpt-6\.1-sol`, pass it through with `--model`/i);
+  assert.match(agent, /Current aliases: `sol` → `gpt-6\.2-sol`/i);
+  assert.match(agent, /If the user asks for a concrete model name such as `gpt-6\.2-sol`, pass it through with `--model`/i);
   assert.match(agent, /Add `--fast` only when the user explicitly asks for fast\/speed mode/i);
   assert.match(agent, /Return the stdout of the `codex-companion` command exactly as-is/i);
   assert.match(agent, /If the Bash call fails or Codex cannot be invoked, return nothing/i);
@@ -132,7 +132,7 @@ test("rescue command absorbs continue semantics", () => {
   assert.match(runtimeSkill, /That prompt drafting is the only Claude-side work allowed/i);
   assert.match(runtimeSkill, /Leave `--effort` unset unless the user explicitly requests a specific effort/i);
   assert.match(runtimeSkill, /Leave model unset by default/i);
-  assert.match(runtimeSkill, /Map the current aliases to their models: `sol` → `gpt-6\.1-sol`/i);
+  assert.match(runtimeSkill, /Map the current aliases to their models: `sol` → `gpt-6\.2-sol`/i);
   assert.match(runtimeSkill, /If the forwarded request includes `--background` or `--wait`, treat that as Claude-side execution control only/i);
   assert.match(runtimeSkill, /Strip it before calling `task`/i);
   assert.match(runtimeSkill, /`--effort`: accepted values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`/i);

@@ -73,12 +73,19 @@ const DEFAULT_STATUS_POLL_INTERVAL_MS = 2000;
 const VALID_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 // Shorthand aliases for the current Codex model catalog. `spark` is kept as a
 // legacy alias for the fast/cheap model, which is now `gpt-6-luna`.
+// Shorthand aliases for the current Codex model catalog. The plain names track
+// the newest generation (currently GPT-6.2), so a `sol` alias keeps pointing at
+// the model Codex itself defaults to. Older generations stay reachable through
+// their pinned variants (`sol61`, `astra6`) or by passing the concrete id.
 const MODEL_ALIASES = new Map([
   ["spark", "gpt-6-luna"],
   ["luna", "gpt-6-luna"],
-  ["sol", "gpt-6.1-sol"],
+  ["sol", "gpt-6.2-sol"],
+  ["astra", "gpt-6.2-astra"],
   ["terra", "gpt-6.1-terra"],
-  ["astra", "gpt-6-astra"]
+  ["sol61", "gpt-6.1-sol"],
+  ["astra6", "gpt-6-astra"],
+  ["sol6", "gpt-6-sol"]
 ]);
 // Codex exposes its speed tiers through `serviceTier`. `priority` is the
 // catalog id for the "Fast" tier (roughly 2x speed, higher usage).

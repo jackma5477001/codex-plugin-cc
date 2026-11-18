@@ -22,7 +22,7 @@ Execution mode rules:
 Argument handling:
 - Preserve the user's arguments exactly.
 - `--model`, `--fast`, and `--approval` are runtime-selection flags. Pass them through and do not treat them as part of the image description.
-- Model aliases: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, `astra` → `gpt-6-astra`, legacy `spark` → `gpt-6-luna`.
+- Model aliases: `sol` → `gpt-6.2-sol`, `astra` → `gpt-6.2-astra`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, legacy `spark` → `gpt-6-luna`.
 - The default approval mode for image generation is `auto`, which lets Codex review its own approval requests instead of prompting.
 
 Foreground flow:

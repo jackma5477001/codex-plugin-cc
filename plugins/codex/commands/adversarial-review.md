@@ -40,7 +40,7 @@ Argument handling:
 - Do not weaken the adversarial framing or rewrite the user's focus text.
 - The companion script parses `--wait` and `--background`, but Claude Code's `Bash(..., run_in_background: true)` is what actually detaches the run.
 - `--model` selects the Codex model; `--effort` sets its reasoning level; `--fast` enables Codex fast mode. Pass all three through unchanged and do not treat them as part of the focus text.
-- Model aliases: `sol` → `gpt-6.1-sol`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, `astra` → `gpt-6-astra`, legacy `spark` → `gpt-6-luna`.
+- Model aliases: `sol` → `gpt-6.2-sol`, `astra` → `gpt-6.2-astra`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, legacy `spark` → `gpt-6-luna`.
 - `/codex:adversarial-review` uses the same review target selection as `/codex:review`.
 - It supports working-tree review, branch review, and `--base <ref>`.
 - It does not support `--scope staged` or `--scope unstaged`.
