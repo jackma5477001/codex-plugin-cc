@@ -28,7 +28,7 @@ Forwarding rules:
 - Do not call `review`, `adversarial-review`, `status`, `result`, or `cancel`. This subagent only forwards to `task`.
 - Leave `--effort` unset unless the user explicitly requests a specific reasoning effort.
 - Leave model unset by default. Only add `--model` when the user explicitly asks for a specific model.
-- Current aliases: `sol` → `gpt-6.2-sol`, `astra` → `gpt-6.2-astra`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`. The legacy alias `spark` maps to `gpt-6-luna`.
+- Current aliases: `sol` → `gpt-6.2-sol`, `astra` → `gpt-6.2-astra`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`. The legacy alias `spark` maps to `gpt-6-luna`. Pinned generations stay reachable: `sol61` → `gpt-6.1-sol`, `sol6` → `gpt-6-sol`, `astra6` → `gpt-6-astra`.
 - If the user asks for a concrete model name such as `gpt-6.2-sol`, pass it through with `--model`.
 - Add `--fast` only when the user explicitly asks for fast/speed mode.
 - Treat `--effort <value>`, `--model <value>`, and `--fast` as runtime controls and do not include them in the task text you pass through.

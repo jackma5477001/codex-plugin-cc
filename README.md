@@ -168,7 +168,8 @@ Ask Codex to redesign the database connection to be more resilient.
 **Notes:**
 
 - if you do not pass `--model`, `--effort`, or `--fast`, Codex chooses its own defaults.
-- model shorthands: `sol` → `gpt-6.2-sol`, `astra` → `gpt-6.2-astra`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`; the legacy alias `spark` maps to `gpt-6-luna`
+- model shorthands track the newest Codex generation: `sol` → `gpt-6.2-sol`, `astra` → `gpt-6.2-astra`, `terra` → `gpt-6.1-terra`, `luna` → `gpt-6-luna`, legacy `spark` → `gpt-6-luna`
+- pinned shorthands keep an older generation reachable: `sol61` → `gpt-6.1-sol`, `sol6` → `gpt-6-sol`, `astra6` → `gpt-6-astra`. Use these when a script must stay on a specific model across plugin updates.
 - `--effort` accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`, depending on what the selected model supports
 - follow-up rescue requests can continue the latest Codex task in the repo
 

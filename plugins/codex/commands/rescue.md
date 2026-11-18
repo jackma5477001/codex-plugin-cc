@@ -78,7 +78,7 @@ previous task exists.
   unchanged and never treat them as part of the natural-language task text.
 - `--wait` is a Claude-side execution flag. Strip it before calling the script.
 - Model aliases: `sol` → `gpt-6.2-sol`, `astra` → `gpt-6.2-astra`, `terra` → `gpt-6.1-terra`,
-  `luna` → `gpt-6-luna`, legacy `spark` → `gpt-6-luna`.
+  `luna` → `gpt-6-luna`, legacy `spark` → `gpt-6-luna`; pinned generations `sol61` → `gpt-6.1-sol`, `sol6` → `gpt-6-sol`, `astra6` → `gpt-6-astra`.
 - Leave `--effort`, `--model`, `--fast`, and `--approval` unset unless the user asked for them.
 - Do not paraphrase, summarize, rewrite, or add commentary around the command output.
 - If the companion script reports that Codex is missing or unauthenticated, tell the user to run

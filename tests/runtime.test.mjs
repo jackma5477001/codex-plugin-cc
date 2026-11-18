@@ -805,8 +805,9 @@ test("task resolves current model aliases and passes concrete ids through", () =
 });
 
 test("every model alias resolves, and pinned generations stay reachable", () => {
-  // Guards against a Codex catalog bump silently leaving an alias on an
-  // outdated generation: the plain names must track the newest models.
+  // Guards the mapping itself: an accidental edit to MODEL_ALIASES is caught
+  // here. It cannot detect upstream catalog changes -- a retired model id only
+  // surfaces when a real Codex run fails, not from this hardcoded expectation.
   const expectations = [
     ["sol", "gpt-6.2-sol"],
     ["astra", "gpt-6.2-astra"],

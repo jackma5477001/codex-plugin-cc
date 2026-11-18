@@ -4,7 +4,7 @@
 
 - Tracked the Codex catalog bump to GPT-6.2: the `sol` alias now resolves to `gpt-6.2-sol` and `astra` to `gpt-6.2-astra`, matching the model Codex itself defaults to.
 - Added pinned aliases for older generations so existing scripts keep working: `sol61` → `gpt-6.1-sol`, `sol6` → `gpt-6-sol`, `astra6` → `gpt-6-astra`. `terra` stays on `gpt-6.1-terra` and `luna`/`spark` on `gpt-6-luna`.
-- Added a test that asserts every alias target, so a future catalog bump cannot silently leave an alias pointing at a retired generation.
+- Added a test that asserts every alias target, so an accidental edit to the mapping is caught. It does not detect upstream catalog changes: a retired model id only surfaces when a real Codex run fails.
 
 ## 1.0.8
 

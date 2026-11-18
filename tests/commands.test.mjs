@@ -145,7 +145,8 @@ test("rescue command absorbs continue semantics", () => {
   assert.match(readme, /### `\/codex:image`/);
   assert.match(readme, /if you do not pass `--model`, `--effort`, or `--fast`, Codex chooses its own defaults/i);
   assert.match(readme, /--model gpt-6\.1-terra --effort high --fast/i);
-  assert.match(readme, /the legacy alias `spark` maps to `gpt-6-luna`/i);
+  assert.match(readme, /legacy `spark` → `gpt-6-luna`/i);
+  assert.match(readme, /pinned shorthands keep an older generation reachable/i);
   assert.match(readme, /### Model and speed selection/);
   assert.match(readme, /continue a previous Codex task/i);
   assert.match(readme, /### `\/codex:setup`/);
